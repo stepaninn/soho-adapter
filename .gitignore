@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+
+*.har
+downloads/
+soho-adapter
