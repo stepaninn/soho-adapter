@@ -13,6 +13,7 @@ import (
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	token      string
 }
 
 func NewClient(rawBaseURL string) (*Client, error) {
@@ -61,6 +62,10 @@ func (c *Client) do(
 	}
 
 	req.Header.Set("Accept", "application/json")
+
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

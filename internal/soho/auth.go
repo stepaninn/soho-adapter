@@ -48,3 +48,51 @@ func (c *Client) Login(
 
 	return output.Token, nil
 }
+
+func (c *Client) organizationToken(
+	ctx context.Context,
+) (string, error) {
+	var output tokenResponse
+
+	err := c.doJSON(
+		ctx,
+		http.MethodPost,
+		"/master/api/set-org",
+		nil,
+		&output,
+	)
+	if err != nil {
+		return "", fmt.Errorf("set organization: %w", err)
+	}
+
+	if output.Token == "" {
+		return "", fmt.Errorf("set organization has no token")
+	}
+
+	return output.Token, nil
+}
+
+func (c *Client) Authenticate(
+	ctx context.Context,
+	login string,
+	password string,
+) error {
+	c.token = ""
+
+	rootToken, err := c.Login(ctx, login, password)
+	if err != nil {
+		return err
+	}
+
+	c.token = rootToken
+
+	orgToken, err := c.organizationToken(ctx)
+	if err != nil {
+		c.token = ""
+		return err
+	}
+
+	c.token = orgToken
+
+	return nil
+}
