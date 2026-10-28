@@ -49,6 +49,13 @@ func (c *Client) doGraphQL(
 		return fmt.Errorf("GraphQL request: %w", err)
 	}
 
+	if len(response.Errors) > 0 {
+		return fmt.Errorf(
+			"GraphQL error: %s",
+			response.Errors[0].Message,
+		)
+	}
+
 	if len(response.Data) == 0 ||
 		string(response.Data) == "null" {
 		return fmt.Errorf("GraphQL response contains no data")
