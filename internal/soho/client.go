@@ -14,6 +14,7 @@ type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	token      string
+	orgID      string
 }
 
 func NewClient(rawBaseURL string) (*Client, error) {
@@ -65,6 +66,10 @@ func (c *Client) do(
 
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	if path == "/master/graphql" && c.orgID != "" {
+		req.Header.Set("x-procraft-org", c.orgID)
 	}
 
 	if body != nil {

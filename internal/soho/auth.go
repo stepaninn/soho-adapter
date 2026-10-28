@@ -78,6 +78,7 @@ func (c *Client) Authenticate(
 	password string,
 ) error {
 	c.token = ""
+	c.orgID = ""
 
 	rootToken, err := c.Login(ctx, login, password)
 	if err != nil {
@@ -92,7 +93,14 @@ func (c *Client) Authenticate(
 		return err
 	}
 
+	orgID, err := organizationIDFromToken(orgToken)
+	if err != nil {
+		c.token = ""
+		return fmt.Errorf("organization ID from token: %w", err)
+	}
+
 	c.token = orgToken
+	c.orgID = orgID
 
 	return nil
 }

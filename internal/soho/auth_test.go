@@ -127,7 +127,7 @@ func TestAuthenticate(t *testing.T) {
 		{
 			name:     "success",
 			status:   http.StatusOK,
-			response: `{"token":"org-token"}`,
+			response: `{"token":"test.eyJvcmdJZCI6IjQyIn0.test"}`,
 		},
 		{
 			name:      "unauthorized",
@@ -218,8 +218,11 @@ func TestAuthenticate(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if client.token != "org-token" {
+				if client.token != "test.eyJvcmdJZCI6IjQyIn0.test" {
 					t.Error("organization token was not saved")
+				}
+				if client.orgID != "42" {
+					t.Error("organization ID was not saved")
 				}
 			}
 			if len(paths) != 2 ||
