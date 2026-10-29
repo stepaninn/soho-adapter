@@ -69,12 +69,13 @@ func NormalizeHomework(bundle HomeworkBundle) HomeworkMaterials {
 	return NormalizeHomeworkWithRoles(bundle, nil)
 }
 
-// Роли задаются по ID профиля автора только для выбранного чата
+// Роли берутся из участников чата, настройки служат резервом
 func NormalizeHomeworkWithRoles(bundle HomeworkBundle, roles map[string]string) HomeworkMaterials {
 	result := HomeworkMaterials{Bundle: bundle, ChatURL: ChatURL(bundle.ChatUID), Messages: make([]MessageMaterials, 0, len(bundle.Messages)), Warnings: append([]string{}, bundle.Warnings...)}
+	index := newParticipantRoles(bundle)
 	for _, message := range bundle.Messages {
 		materials := normalizeMessage(bundle.ChatID, message)
-		assignMaterialRoles(&materials, message, roles)
+		assignMaterialRoles(&materials, message, roles, index)
 		result.Messages = append(result.Messages, materials)
 		result.Warnings = append(result.Warnings, materials.Warnings...)
 	}
@@ -82,7 +83,7 @@ func NormalizeHomeworkWithRoles(bundle HomeworkBundle, roles map[string]string) 
 }
 
 func normalizeMessage(chatID string, message HomeworkMessage) MessageMaterials {
-	result := MessageMaterials{ParsingComplete: true, MessageID: message.ID, Role: "unknown", RawText: message.Text, Links: []MaterialReference{}, Attachments: []Attachment{}, Warnings: []string{"Роль автора не установлена, материалы требуют ручного выбора"}}
+	result := MessageMaterials{ParsingComplete: true, MessageID: message.ID, Role: "unknown", RawText: message.Text, Links: []MaterialReference{}, Attachments: []Attachment{}, Warnings: []string{"Роль автора не установлена по данным участников чата"}}
 	reference := func(rawURL, purpose string) MaterialReference {
 		ref := MaterialReference{ChatID: chatID, MessageID: message.ID, Purpose: purpose, URL: rawURL, State: "not-fetched"}
 		ref.ID = MaterialID(chatID, message.ID, purpose, rawURL)
@@ -232,15 +233,26 @@ func MaterialID(chatID, messageID, purpose, rawURL string) string {
 	return fmt.Sprintf("%x", sum[:16])
 }
 
-func assignMaterialRoles(materials *MessageMaterials, message HomeworkMessage, roles map[string]string) {
-	materials.Author, materials.TimeCreated, materials.RoleSource = message.UserCreated, message.TimeCreated, "unresolved"
-	if message.UserCreated != nil && message.UserCreated.ID != "" {
-		if role := roles[message.UserCreated.ID]; role == "teacher" || role == "student" {
-			materials.Role, materials.RoleSource = role, "configured-profile-id"
-			if len(materials.Warnings) > 0 {
-				materials.Warnings = materials.Warnings[1:]
+func assignMaterialRoles(materials *MessageMaterials, message HomeworkMessage, roles map[string]string, index participantRoles) {
+	materials.Author, materials.TimeCreated = message.UserCreated, message.TimeCreated
+	role, source, conflict := index.resolve(message.UserCreated)
+	materials.Role, materials.RoleSource = role, source
+	if conflict {
+		materials.Warnings = append(materials.Warnings, "Противоречивые роли участника, автоматическое назначение отключено")
+	}
+	if role == "unknown" && !conflict && message.UserCreated != nil && message.UserCreated.ID != "" {
+		if configured := roles[message.UserCreated.ID]; configured == "teacher" || configured == "student" {
+			materials.Role, materials.RoleSource = configured, "configured-profile-id"
+		}
+	}
+	if materials.Role != "unknown" {
+		filtered := []string{}
+		for _, warning := range materials.Warnings {
+			if warning != "Роль автора не установлена по данным участников чата" {
+				filtered = append(filtered, warning)
 			}
 		}
+		materials.Warnings = filtered
 	}
 	for i := range materials.Links {
 		setReferenceAuthor(&materials.Links[i], *materials)

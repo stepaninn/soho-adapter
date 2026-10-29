@@ -43,7 +43,7 @@ func TestMCPWorkflow(t *testing.T) {
 			if strings.Contains(request.Query, "query ListHomeworkChats") {
 				body = `{"data":{"viewer":{"chats":{"pageInfo":{"hasNextPage":false},"edges":[{"node":{"id":"chat","uid":42,"title":"Тест"}}]}}}}`
 			} else {
-				body = `{"data":{"chat":{"__typename":"Chat","id":"chat","uid":42,"title":"Тест","studentHomework":{"academicHomework":{"id":"assignment"}},"messagesNew":{"pageInfo":{"hasPreviousPage":false,"hasNextPage":false},"edges":[{"node":{"id":"teacher-message","chatId":42,"userCreated":{"id":"teacher","uid":50,"name":"Преподаватель"},"messageType":"Text","isWysiwyg":false,"text":"Задание https://files.test/task"}}]}}}}`
+				body = `{"data":{"chat":{"__typename":"Chat","id":"chat","uid":42,"title":"Тест","teachers":[{"user":{"id":"teacher"}}],"students":[],"studentHomework":{"academicHomework":{"id":"assignment"}},"messagesNew":{"pageInfo":{"hasPreviousPage":false,"hasNextPage":false},"edges":[{"node":{"id":"teacher-message","chatId":42,"userCreated":{"id":"teacher","uid":50,"name":"Преподаватель"},"messageType":"Text","isWysiwyg":false,"text":"Задание https://files.test/task"}}]}}}}`
 			}
 		default:
 			t.Error("unexpected endpoint")
@@ -59,7 +59,7 @@ func TestMCPWorkflow(t *testing.T) {
 	if err := client.Authenticate(ctx, "test-login", "test-password"); err != nil {
 		t.Fatal(err)
 	}
-	service := soho.NewReviewService(client, nil, t.TempDir(), map[string]map[string]string{"chat": {"teacher": "teacher"}})
+	service := soho.NewReviewService(client, nil, t.TempDir(), nil)
 	server := New(service)
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	session, err := server.Connect(ctx, serverTransport, nil)
@@ -105,7 +105,7 @@ func TestMCPWorkflow(t *testing.T) {
 	if err := json.Unmarshal(encoded, &review); err != nil {
 		t.Fatal(err)
 	}
-	if len(review.Groups["teacher"]) != 1 || len(review.UnreadMaterialIDs) != 1 || review.MaterialsAvailable || review.Messages[0].Author.ID != "teacher" {
+	if len(review.Groups["teacher"]) != 1 || len(review.UnreadMaterialIDs) != 1 || review.MaterialsAvailable || review.Messages[0].Author.ID != "teacher" || review.Messages[0].RoleSource != "chat-participant-profile-id" {
 		t.Fatal("roles or missing link omitted")
 	}
 	before := requests

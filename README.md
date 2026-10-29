@@ -26,7 +26,6 @@ SOHO_LOGIN=ваш_логин
 SOHO_PASSWORD='ваш_пароль'
 SOHO_RESOURCE_HOSTS=app-uploads-prod.storage.yandexcloud.net,files.example.org,tasks.example.org
 SOHO_OUTPUT_DIR=downloads/mcp
-SOHO_AUTHOR_ROLES_FILE=downloads/author-roles.json
 ```
 
 Имена `files.example.org` и `tasks.example.org` замените хостами реальных материалов
@@ -49,25 +48,26 @@ SOHO_AUTHOR_ROLES_FILE=downloads/author-roles.json
 `TimeCreated` и собственный `ID`. Текст и связанные с ним ресурсы остаются
 в одном сообщении. Имя автора запрашивается в `userCreated.name`.
 
-В наблюдавшемся API ID профиля автора и `chatPeer.student.authUserId` принадлежат
-разным сущностям. Мы не сравниваем их напрямую и не назначаем роль по имени,
-расширению файла, порядку сообщений или событию OnReview. Роль не определяет
-назначение текста: сообщение преподавателя может быть заданием, пояснением
-или обратной связью; сообщение ученика — вопросом или решением.
+Роли определяются автоматически по участникам чата, без заполнения файлов:
 
-Для подтверждённого сопоставления:
+- `teachers: participants(roles: [Teacher, HeadTeacher])` — преподаватели
+- `students: participants(roles: [Partner])` — ученики в контексте домашней работы
+- `userCreated.id` сопоставляется с `participants[].user.id`
+- Если профиль отличается, сравниваются явно возвращённые `authUserId` обеих сторон
 
-1. Экспортируйте чат без файла ролей (`--metadata-only`) и откройте manifest локально
-2. Сверьте авторов с сайтом по сообщениям и времени
-3. Скопируйте `author-roles.example.json` в `downloads/author-roles.json`
-4. Замените ключ чата на `Materials.Bundle.ChatID`, а ключи авторов — на
-   `Materials.Bundle.Messages[].UserCreated.ID`; используйте **ID профиля**
-5. Выполните `chmod 600 downloads/author-roles.json` и задайте путь в `.env`
+Нельзя сравнивать `userCreated.uid` с `chatPeer.student.authUserId`: это разные
+пространства идентификаторов. Имя, порядок сообщения и расширение файла также
+не определяют роль. При противоречивых ролях или недостаточных данных остаётся
+`unknown`, а конкретный отправитель и исходные материалы сохраняются.
+Сообщение преподавателя может быть заданием, пояснением или обратной связью;
+сообщение ученика — вопросом или решением. Это различие анализирует нейросеть
+по полному контексту, а не по одной роли автора.
 
-Если сопоставления ещё нет, оставьте `SOHO_AUTHOR_ROLES_FILE` пустым.
-Без подтверждения роль остаётся `unknown`, но конкретный автор не теряется.
-Файлы скачиваются в подкаталоги `teacher/`, `student/`, `unknown/`.
-Несколько преподавателей сохраняют собственные профили в метаданных.
+Файлы автоматически сохраняются в подкаталоги `teacher/`, `student/`, `unknown/`.
+Ручной `SOHO_AUTHOR_ROLES_FILE` оставлен только как необязательный диагностический
+резерв для неподдержанного профиля, когда API не определил роль. Для обычного
+запуска эту переменную нужно оставить пустой или не указывать. Данные API имеют
+приоритет. Пример резервного формата — `author-roles.example.json`.
 
 ## Ручная проверка CLI
 
@@ -199,7 +199,7 @@ go build -o /tmp/soho-adapter .
 SDK-клиентом и сервером через `NewInMemoryTransports`, без SOHO и TCP:
 
 ```sh
-go test ./... -run '^(TestDefaultDownload|TestMCP|TestAuthorRole|TestMaterial|TestFetchLink|TestReview|TestInspect|TestParseOptions|TestRun|TestNormalize|TestDownload|TestGetHomeworkBundle|TestReadEnvFile|TestCredentialsFromEnvFile|TestListHomeworkChats|TestOrganizationIDFromToken|TestClientRejectsRedirect)' -count=1
+go test ./... -run '^(TestParticipant|TestDefaultDownload|TestMCP|TestAuthorRole|TestMaterial|TestFetchLink|TestReview|TestInspect|TestParseOptions|TestRun|TestNormalize|TestDownload|TestGetHomeworkBundle|TestReadEnvFile|TestCredentialsFromEnvFile|TestListHomeworkChats|TestOrganizationIDFromToken|TestClientRejectsRedirect)' -count=1
 go test -race ./internal/mcpserver ./internal/soho -run '^(TestMCP|TestReview)' -count=1
 ```
 

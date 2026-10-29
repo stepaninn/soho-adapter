@@ -47,10 +47,16 @@ type SimpleHomeworkDetails struct {
 	IsInline   *bool `json:"isInline"`
 }
 
+type ChatParticipant struct {
+	ID   string         `json:"id"`
+	User *MessageAuthor `json:"user"`
+}
+
 type MessageAuthor struct {
-	Name *string `json:"name"`
-	ID   string  `json:"id"`
-	UID  int64   `json:"uid"`
+	AuthUserID *int64  `json:"authUserId"`
+	Name       *string `json:"name"`
+	ID         string  `json:"id"`
+	UID        int64   `json:"uid"`
 }
 
 type HomeworkMessage struct {
@@ -80,6 +86,8 @@ type MessagePageInfo struct {
 }
 
 type HomeworkBundle struct {
+	Teachers        []ChatParticipant
+	Students        []ChatParticipant
 	Title           *string
 	LastUpdated     *string
 	ChatPeer        *HomeworkChatPeer
@@ -108,6 +116,8 @@ func (c *Client) GetHomeworkBundle(ctx context.Context, chatID string, limit int
 		return HomeworkBundle{}, fmt.Errorf("homework chat is unavailable")
 	}
 	var chat struct {
+		Teachers        []ChatParticipant `json:"teachers"`
+		Students        []ChatParticipant `json:"students"`
 		Title           *string           `json:"title"`
 		LastUpdated     *string           `json:"lastUpdated"`
 		ChatPeer        *HomeworkChatPeer `json:"chatPeer"`
@@ -131,6 +141,7 @@ func (c *Client) GetHomeworkBundle(ctx context.Context, chatID string, limit int
 	bundle := HomeworkBundle{
 		ChatID: chat.ID, ChatUID: chat.UID, StudentHomework: chat.StudentHomework,
 		Title: chat.Title, LastUpdated: chat.LastUpdated, ChatPeer: chat.ChatPeer,
+		Teachers: chat.Teachers, Students: chat.Students,
 		Messages: make([]HomeworkMessage, 0), Warnings: make([]string, 0), RawChat: data.Chat,
 	}
 	if chat.StudentHomework == nil {

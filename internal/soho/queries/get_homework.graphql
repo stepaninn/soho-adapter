@@ -17,6 +17,14 @@ query GetHomeworkBundle($id: ID!, $limit: Int!) {
           }
         }
       }
+      teachers: participants(roles: [Teacher, HeadTeacher]) {
+        id
+        user { id authUserId }
+      }
+      students: participants(roles: [Partner]) {
+        id
+        user { id authUserId }
+      }
       studentHomework {
         id
         uid
@@ -56,7 +64,7 @@ query GetHomeworkBundle($id: ID!, $limit: Int!) {
             metaInfo
             isWysiwyg
             timeCreated
-            userCreated { id uid name }
+            userCreated { id uid name authUserId }
             quoteMessageId
             threadMessageId
             visibility

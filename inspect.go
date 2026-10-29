@@ -282,7 +282,7 @@ func printMaterialGroups(out io.Writer, materials soho.HomeworkMaterials) {
 	}
 	for _, message := range materials.Messages {
 		if message.Role == "unknown" {
-			fmt.Fprintln(out, "Сопоставьте профили авторов через --roles-file; имена и ID сохранены в manifest")
+			fmt.Fprintln(out, "Не все авторы найдены среди участников чата; имена и ID сохранены в manifest")
 			break
 		}
 	}
