@@ -29,7 +29,11 @@ go run .
 и читает первую страницу из максимум 30 чатов с фильтрами «Требующие внимания»,
 «Только мои», «Сначала старые». Показывает число чатов, статусы и наличие
 продолжения. Полный обход пока доступен через `Client.ListHomeworkChats`,
-а не через CLI. Работа с живым API пока не подтверждена.
+а не через CLI. Метод `Client.GetHomeworkBundle(ctx, chatID, limit)` получает
+контекст выбранной работы и сообщения. Он сохраняет исходные данные и
+возвращает `Complete=false` с предупреждениями, если контекст недоступен
+или история усечена. Подгрузка истории и разбор материалов пока не реализованы.
+Работа с живым API пока не подтверждена.
 
 `.env` читается из текущего рабочего каталога и уже исключён из Git.
 Переменные окружения имеют приоритет, даже если заданы пустой строкой.
@@ -75,5 +79,5 @@ go test ./internal/soho -run '^TestListHomeworkChats$' -count=1 -v
 транспорт в памяти. Их можно запустить отдельно:
 
 ```sh
-go test ./... -run '^(TestRun|TestReadEnvFile|TestCredentialsFromEnvFile|TestListHomeworkChats|TestOrganizationIDFromToken)' -count=1
+go test ./... -run '^(TestGetHomeworkBundle|TestRun|TestReadEnvFile|TestCredentialsFromEnvFile|TestListHomeworkChats|TestOrganizationIDFromToken)' -count=1
 ```

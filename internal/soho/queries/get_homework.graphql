@@ -1,0 +1,64 @@
+# Чтение контекста и сообщений, живой API пока не проверен
+query GetHomeworkBundle($id: ID!, $limit: Int!) {
+  chat: node(id: $id) {
+    __typename
+    ... on Chat {
+      id
+      uid
+      studentHomework {
+        id
+        uid
+        academicHomeworkId
+        progressStatus
+        mergedStatus
+        attempt
+        gradingScale
+        grade
+        scores
+        gradeOrScoresMaxAchievable
+        academicHomework {
+          id
+          kind
+          detailsSimple {
+            isGradable
+            isInline
+          }
+        }
+      }
+      messagesNew(last: $limit) {
+        pageInfo {
+          hasPreviousPage
+          hasNextPage
+          startCursor
+          endCursor
+        }
+        edges {
+          cursor
+          node {
+            id
+            uid
+            chatId
+            messageType
+            text
+            metaInfo
+            isWysiwyg
+            timeCreated
+            userCreated { id uid }
+            quoteMessageId
+            threadMessageId
+            visibility
+            status
+            imageAnnotations {
+              sourceMessageId
+              sourceImageUrl
+              bakedImage { url width height }
+              previewImage { url width height }
+              hasDrawing
+              hasAreas
+            }
+          }
+        }
+      }
+    }
+  }
+}
