@@ -73,6 +73,17 @@ func TestMCPWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer connection.Close()
+	instructions := connection.InitializeResult().Instructions
+	for _, section := range []string{"Сценарий: список", "Сценарий: проверка", "OnReview"} {
+		if !strings.Contains(instructions, section) {
+			t.Errorf("workflow instruction missing: %s", section)
+		}
+	}
+	guide, err := connection.ReadResource(ctx, &mcp.ReadResourceParams{URI: workflowURI})
+	if err != nil || len(guide.Contents) != 1 || guide.Contents[0].Text != instructions || guide.Contents[0].MIMEType != "text/markdown" {
+		t.Fatal("workflow guide resource differs from initialization instructions")
+	}
+
 	tools, err := connection.ListTools(ctx, &mcp.ListToolsParams{})
 	if err != nil {
 		t.Fatal(err)

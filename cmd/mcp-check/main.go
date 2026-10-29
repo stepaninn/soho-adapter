@@ -88,6 +88,15 @@ func run(args []string, out io.Writer) error {
 	}
 	defer session.Close()
 	fmt.Fprintln(out, "STDIO initialize: OK")
+	instructions := session.InitializeResult().Instructions
+	if !strings.Contains(instructions, "Сценарий: список") || !strings.Contains(instructions, "Сценарий: проверка") {
+		return fmt.Errorf("workflow guide missing from MCP initialization")
+	}
+	guide, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "soho://guide/workflow"})
+	if err != nil || len(guide.Contents) != 1 || guide.Contents[0].Text != instructions {
+		return fmt.Errorf("workflow guide resource unavailable")
+	}
+	fmt.Fprintln(out, "Workflow guide: OK")
 	tools, err := session.ListTools(ctx, &mcp.ListToolsParams{})
 	if err != nil {
 		return fmt.Errorf("tools/list failed")
