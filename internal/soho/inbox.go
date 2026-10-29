@@ -138,3 +138,59 @@ func (c *Client) ListHomeworkChatsPage(
 
 	return page, nil
 }
+
+// ListHomeworkChats collects chats starting at options.After (nil means the first
+// page). Filters and page size remain fixed. A repeated chat replaces its earlier
+// value without changing position. On any failure the partial list is discarded.
+// The result is not a snapshot: chats may change while pages are being fetched.
+func (c *Client) ListHomeworkChats(
+	ctx context.Context,
+	options ListHomeworkChatsOptions,
+	maxPages int,
+) ([]ChatSummary, error) {
+	if maxPages <= 0 {
+		return nil, fmt.Errorf("maximum page count must be positive")
+	}
+
+	chats := make([]ChatSummary, 0)
+	positions := make(map[string]int)
+	seenCursors := make(map[string]bool)
+	if options.After != nil {
+		// Own the cursor value rather than modifying the caller's pointer.
+		after := *options.After
+		options.After = &after
+		seenCursors[after] = true
+	}
+
+	for pageNumber := 1; ; pageNumber++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("list homework chats page %d: %w", pageNumber, err)
+		}
+		page, err := c.ListHomeworkChatsPage(ctx, options)
+		if err != nil {
+			return nil, fmt.Errorf("list homework chats page %d: %w", pageNumber, err)
+		}
+		for _, chat := range page.Chats {
+			if position, exists := positions[chat.ID]; exists {
+				chats[position] = chat
+			} else {
+				positions[chat.ID] = len(chats)
+				chats = append(chats, chat)
+			}
+		}
+		if !page.PageInfo.HasNextPage {
+			return chats, nil
+		}
+
+		// ListHomeworkChatsPage already checks that a continuation cursor is present.
+		next := *page.PageInfo.EndCursor
+		if seenCursors[next] {
+			return nil, fmt.Errorf("homework chat pagination cursor repeated after page %d", pageNumber)
+		}
+		seenCursors[next] = true
+		if pageNumber == maxPages {
+			return nil, fmt.Errorf("homework chat pagination exceeded maximum of %d pages", maxPages)
+		}
+		options.After = &next
+	}
+}
