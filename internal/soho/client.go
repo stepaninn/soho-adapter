@@ -41,7 +41,8 @@ func NewClient(rawBaseURL string) (*Client, error) {
 	return &Client{
 		baseURL: strings.TrimRight(u.String(), "/"),
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:       30 * time.Second,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}, nil
 }
