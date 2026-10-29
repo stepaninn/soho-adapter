@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"time"
@@ -11,13 +12,13 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "Ошибка:", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(out io.Writer) error {
 	login := os.Getenv("SOHO_LOGIN")
 	password := os.Getenv("SOHO_PASSWORD")
 
@@ -42,19 +43,44 @@ func run() error {
 		return fmt.Errorf("create client: %w", err)
 	}
 
-	fmt.Println("Logging in...")
+	fmt.Fprintln(out, "Logging in...")
 
 	if err := client.Authenticate(ctx, login, password); err != nil {
 		return fmt.Errorf("prepare session: %w", err)
 	}
 
-	fmt.Println("Verifying access to organization...")
+	fmt.Fprintln(out, "Verifying access to organization...")
 
 	if _, err := client.CurrentOrganization(ctx); err != nil {
 		return fmt.Errorf("read organization: %w", err)
 	}
 
-	fmt.Println("The login has been completed, organization context has been confirmed")
+	fmt.Fprintln(out, "The login has been completed, organization context has been confirmed")
+
+	page, err := client.ListHomeworkChatsPage(ctx, soho.ListHomeworkChatsOptions{
+		OnlyAttention: true,
+		OnlyMy:        true,
+		SortDesc:      false,
+		Limit:         30,
+	})
+	if err != nil {
+		return fmt.Errorf("read homework chat page: %w", err)
+	}
+
+	fmt.Fprintf(out, "Homework chats on this page: %d\n", len(page.Chats))
+	for i, chat := range page.Chats {
+		status := "unavailable (no studentHomework)"
+		if chat.StudentHomework != nil {
+			status = chat.StudentHomework.MergedStatus
+			if status == "" {
+				status = "unavailable (empty mergedStatus)"
+			}
+		}
+		fmt.Fprintf(out, "%d. Status: %s\n", i+1, status)
+	}
+	if page.PageInfo.HasNextPage {
+		fmt.Fprintln(out, "More chats are available; only the first page was loaded.")
+	}
 
 	return nil
 }
