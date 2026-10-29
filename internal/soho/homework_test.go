@@ -13,8 +13,10 @@ import (
 
 const homeworkChatFixture = `{
  "__typename":"Chat","id":"chat-test","uid":42,
+ "title":"Тестовое задание","lastUpdated":"2026-01-02T10:00:00Z",
+ "chatPeer":{"__typename":"ChatPeerHomework","student":{"__typename":"ChatPeerUser","name":"Тестовый ученик"}},
  "studentHomework":{
-  "id":"hw-test","uid":43,"academicHomeworkId":44,
+  "id":"hw-test","uid":43,"academicHomeworkId":44,"deadlineAt":"2026-01-03T12:00:00Z",
   "progressStatus":"ReviewedCorrect","mergedStatus":"ReviewedCorrect","attempt":0,
   "gradingScale":"Hundred","grade":75.5,"scores":null,"gradeOrScoresMaxAchievable":100,
   "academicHomework":{"id":"academic-test","kind":"Simple","detailsSimple":{"isGradable":true,"isInline":false}}
@@ -56,7 +58,7 @@ func TestGetHomeworkBundle(t *testing.T) {
 				if !reflect.DeepEqual(input.Variables, map[string]any{"id": "chat-test", "limit": float64(20)}) {
 					t.Errorf("unexpected variables: %#v", input.Variables)
 				}
-				for _, fragment := range []string{"query GetHomeworkBundle(", "chat: node(id: $id)", "__typename", "... on Chat", "messagesNew(last: $limit)", "metaInfo", "quoteMessageId", "imageAnnotations"} {
+				for _, fragment := range []string{"query GetHomeworkBundle(", "chat: node(id: $id)", "__typename", "... on Chat", "messagesNew(last: $limit)", "metaInfo", "quoteMessageId", "imageAnnotations", "... on ChatPeerHomework", "... on ChatPeerUser { name }", "deadlineAt", "lastUpdated", "title"} {
 					if !strings.Contains(input.Query, fragment) {
 						t.Errorf("query missing %q", fragment)
 					}
@@ -70,7 +72,13 @@ func TestGetHomeworkBundle(t *testing.T) {
 			if calls != 1 || !bundle.Complete || len(bundle.Warnings) != 0 {
 				t.Fatalf("unexpected completeness: %+v", bundle)
 			}
+			if bundle.Title == nil || *bundle.Title != "Тестовое задание" || bundle.LastUpdated == nil || *bundle.LastUpdated != "2026-01-02T10:00:00Z" || bundle.ChatPeer == nil || bundle.ChatPeer.Student == nil || bundle.ChatPeer.Student.Name == nil || *bundle.ChatPeer.Student.Name != "Тестовый ученик" {
+				t.Fatal("display context lost")
+			}
 			hw := bundle.StudentHomework
+			if hw.DeadlineAt == nil || *hw.DeadlineAt != "2026-01-03T12:00:00Z" {
+				t.Fatal("deadline lost")
+			}
 			if bundle.ChatID != "chat-test" || bundle.ChatUID != 42 || hw == nil || hw.UID != 43 || hw.AcademicHomeworkID != 44 || hw.Attempt != 0 || hw.GradingScale != name {
 				t.Fatal("homework context not preserved")
 			}

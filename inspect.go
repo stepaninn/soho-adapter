@@ -72,14 +72,33 @@ func inspectHomework(ctx context.Context, out io.Writer, client *soho.Client, op
 	}
 	materials := soho.NormalizeHomework(bundle)
 	fmt.Fprintf(out, "Chat: %s\nMessages: %d\nHistory complete: %t\n", materials.ChatURL, len(bundle.Messages), bundle.Complete)
+	var student *string
+	if bundle.ChatPeer != nil && bundle.ChatPeer.TypeName == "ChatPeerHomework" && bundle.ChatPeer.Student != nil {
+		student = bundle.ChatPeer.Student.Name
+	}
+	fmt.Fprintln(out, "Ученик:", displayValue(student))
+	fmt.Fprintln(out, "Заголовок чата:", displayValue(bundle.Title))
+	fmt.Fprintln(out, "Последнее обновление:", displayValue(bundle.LastUpdated))
+	if bundle.StudentHomework != nil {
+		fmt.Fprintln(out, "Срок сдачи:", displayValue(bundle.StudentHomework.DeadlineAt))
+	}
+	seenWarnings := make(map[string]bool)
 	for _, warning := range materials.Warnings {
-		fmt.Fprintln(out, "Warning:", warning)
+		if !seenWarnings[warning] {
+			fmt.Fprintln(out, "Warning:", warning)
+			seenWarnings[warning] = true
+		}
 	}
 	hosts := make(map[string]bool)
 	attachments := []soho.Attachment{}
-	for _, message := range materials.Messages {
+	for index, message := range materials.Messages {
 		attachments = append(attachments, message.Attachments...)
 		fmt.Fprintf(out, "Message: %d links, %d attachments\n", len(message.Links), len(message.Attachments))
+		created := bundle.Messages[index].TimeCreated
+		if created == "" {
+			created = "не указана"
+		}
+		fmt.Fprintln(out, "Дата сообщения:", created)
 		for _, attachment := range message.Attachments {
 			u, err := url.Parse(attachment.URL)
 			if err == nil && u.Scheme == "https" && u.User == nil && u.Hostname() != "" {
@@ -92,6 +111,9 @@ func inspectHomework(ctx context.Context, out io.Writer, client *soho.Client, op
 	}
 	if options.Out == "" {
 		return nil
+	}
+	if options.Hosts == "" && len(attachments) > 0 {
+		fmt.Fprintln(out, "Скачивание не запрошено: сохранится только manifest, для файлов добавьте --allow-file-host")
 	}
 	manifest := struct {
 		Materials soho.HomeworkMaterials
@@ -140,4 +162,11 @@ func inspectHomework(ctx context.Context, out io.Writer, client *soho.Client, op
 		return fmt.Errorf("some attachments were not downloaded; see manifest")
 	}
 	return nil
+}
+
+func displayValue(value *string) string {
+	if value == nil || *value == "" {
+		return "не указано"
+	}
+	return *value
 }

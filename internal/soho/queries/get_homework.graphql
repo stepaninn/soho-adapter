@@ -5,10 +5,23 @@ query GetHomeworkBundle($id: ID!, $limit: Int!) {
     ... on Chat {
       id
       uid
+      title
+      lastUpdated
+      chatPeer {
+        __typename
+        ... on ChatPeerHomework {
+          student {
+            __typename
+            ... on ChatPeerUser { name }
+            ... on ChatPeerOrg { name }
+          }
+        }
+      }
       studentHomework {
         id
         uid
         academicHomeworkId
+        deadlineAt
         progressStatus
         mergedStatus
         attempt

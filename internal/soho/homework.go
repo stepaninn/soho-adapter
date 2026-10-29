@@ -10,14 +10,25 @@ import (
 //go:embed queries/get_homework.graphql
 var getHomeworkBundleQuery string
 
+type HomeworkChatPeer struct {
+	TypeName string           `json:"__typename"`
+	Student  *HomeworkStudent `json:"student"`
+}
+
+type HomeworkStudent struct {
+	TypeName string  `json:"__typename"`
+	Name     *string `json:"name"`
+}
+
 type StudentHomework struct {
-	ID                 string `json:"id"`
-	UID                int64  `json:"uid"`
-	AcademicHomeworkID int64  `json:"academicHomeworkId"`
-	ProgressStatus     string `json:"progressStatus"`
-	MergedStatus       string `json:"mergedStatus"`
-	Attempt            int    `json:"attempt"`
-	GradingScale       string `json:"gradingScale"`
+	DeadlineAt         *string `json:"deadlineAt"`
+	ID                 string  `json:"id"`
+	UID                int64   `json:"uid"`
+	AcademicHomeworkID int64   `json:"academicHomeworkId"`
+	ProgressStatus     string  `json:"progressStatus"`
+	MergedStatus       string  `json:"mergedStatus"`
+	Attempt            int     `json:"attempt"`
+	GradingScale       string  `json:"gradingScale"`
 	// Сохраняем null и формат оценки без предположений о шкале
 	Grade                      json.RawMessage   `json:"grade"`
 	Scores                     json.RawMessage   `json:"scores"`
@@ -68,6 +79,9 @@ type MessagePageInfo struct {
 }
 
 type HomeworkBundle struct {
+	Title           *string
+	LastUpdated     *string
+	ChatPeer        *HomeworkChatPeer
 	ChatID          string
 	ChatUID         int64
 	StudentHomework *StudentHomework
@@ -93,10 +107,13 @@ func (c *Client) GetHomeworkBundle(ctx context.Context, chatID string, limit int
 		return HomeworkBundle{}, fmt.Errorf("homework chat is unavailable")
 	}
 	var chat struct {
-		TypeName        string           `json:"__typename"`
-		ID              string           `json:"id"`
-		UID             int64            `json:"uid"`
-		StudentHomework *StudentHomework `json:"studentHomework"`
+		Title           *string           `json:"title"`
+		LastUpdated     *string           `json:"lastUpdated"`
+		ChatPeer        *HomeworkChatPeer `json:"chatPeer"`
+		TypeName        string            `json:"__typename"`
+		ID              string            `json:"id"`
+		UID             int64             `json:"uid"`
+		StudentHomework *StudentHomework  `json:"studentHomework"`
 		Messages        *struct {
 			PageInfo *MessagePageInfo `json:"pageInfo"`
 			Edges    *[]struct {
@@ -112,6 +129,7 @@ func (c *Client) GetHomeworkBundle(ctx context.Context, chatID string, limit int
 	}
 	bundle := HomeworkBundle{
 		ChatID: chat.ID, ChatUID: chat.UID, StudentHomework: chat.StudentHomework,
+		Title: chat.Title, LastUpdated: chat.LastUpdated, ChatPeer: chat.ChatPeer,
 		Messages: make([]HomeworkMessage, 0), Warnings: make([]string, 0), RawChat: data.Chat,
 	}
 	if chat.StudentHomework == nil {

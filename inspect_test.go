@@ -28,7 +28,7 @@ func TestParseOptions(t *testing.T) {
 
 func TestInspectHomeworkManifest(t *testing.T) {
 	setCLITransport(t, func(r *http.Request) (*http.Response, error) {
-		body := `{"data":{"chat":{"__typename":"Chat","id":"chat-test","uid":42,"studentHomework":{"academicHomework":{"id":"academic"}},"messagesNew":{"pageInfo":{"hasPreviousPage":false,"hasNextPage":false},"edges":[{"node":{"id":"message","chatId":42,"messageType":"Text","isWysiwyg":true,"text":"<p>Пример</p><img src=\"https://files.test/a.png?secret=hidden\">"}}]}}}}`
+		body := `{"data":{"chat":{"__typename":"Chat","id":"chat-test","uid":42,"title":"Тестовое задание","lastUpdated":"2026-01-02T10:00:00Z","chatPeer":{"__typename":"ChatPeerHomework","student":{"name":"Тестовый ученик"}},"studentHomework":{"academicHomework":{"id":"academic"}},"messagesNew":{"pageInfo":{"hasPreviousPage":false,"hasNextPage":false},"edges":[{"node":{"id":"message","chatId":42,"timeCreated":"2026-01-01T10:00:00Z","messageType":"Text","isWysiwyg":true,"text":"<p>Пример</p><img src=\"https://files.test/a.png?secret=hidden\">"}}]}}}}`
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})
 	// Готовим сессию через искусственные ответы авторизации
@@ -55,6 +55,11 @@ func TestInspectHomeworkManifest(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "https://master.soholms.com/inbox/42") || !strings.Contains(out.String(), "not-requested") {
 		t.Fatalf("output: %s", &out)
+	}
+	for _, text := range []string{"Ученик: Тестовый ученик", "Заголовок чата: Тестовое задание", "Последнее обновление: 2026-01-02T10:00:00Z", "Дата сообщения: 2026-01-01T10:00:00Z", "Скачивание не запрошено"} {
+		if !strings.Contains(out.String(), text) {
+			t.Errorf("missing output: %s", text)
+		}
 	}
 	if strings.Contains(out.String(), "hidden") {
 		t.Fatal("signed query leaked to output")
