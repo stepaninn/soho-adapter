@@ -56,7 +56,7 @@ query GetHomeworkBundle($id: ID!, $limit: Int!) {
             metaInfo
             isWysiwyg
             timeCreated
-            userCreated { id uid }
+            userCreated { id uid name }
             quoteMessageId
             threadMessageId
             visibility

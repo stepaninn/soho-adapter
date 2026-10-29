@@ -43,7 +43,7 @@ func TestNormalizeHomework(t *testing.T) {
 		t.Fatal("missing role uncertainty")
 	}
 	for _, file := range files.Attachments {
-		if file.ChatID != "chat" || file.MessageID != "files" || file.Purpose != "file" || file.State != "discovered" {
+		if file.ChatID != "chat" || file.MessageID != "files" || file.Purpose != "file" || file.State != "not-fetched" {
 			t.Fatal("provenance lost")
 		}
 	}
@@ -84,5 +84,44 @@ func TestNormalizeHomeworkMetadata(t *testing.T) {
 				t.Fatal("unknown payload lost")
 			}
 		})
+	}
+}
+
+func TestMaterialAuthorship(t *testing.T) {
+	text := "Пояснение https://example.test/task"
+	meta := `{"typ":"MultiFile","payload":{"files":[{"url":"https://files.test/assignment.pdf","name":"assignment.pdf"}]}}`
+	name := "Одинаковое имя"
+	teacher := &MessageAuthor{ID: "teacher-profile", UID: 10, Name: &name}
+	student := &MessageAuthor{ID: "student-profile", UID: 20, Name: &name}
+	bundle := HomeworkBundle{ChatID: "chat", Messages: []HomeworkMessage{
+		{ID: "teacher-message", UserCreated: teacher, TimeCreated: "teacher-time", Text: &text, MetaInfo: &meta},
+		{ID: "student-message", UserCreated: student, TimeCreated: "student-time", Text: &text, MetaInfo: &meta},
+		{ID: "unknown-message", UserCreated: &MessageAuthor{ID: "other-profile", Name: &name}, Text: &text},
+	}}
+	result := NormalizeHomeworkWithRoles(bundle, map[string]string{"teacher-profile": "teacher", "student-profile": "student"})
+	for i, role := range []string{"teacher", "student", "unknown"} {
+		message := result.Messages[i]
+		if message.Role != role || message.Author.ID != bundle.Messages[i].UserCreated.ID || message.RawText == nil || message.PlainText != text {
+			t.Fatal("message authorship or explanation lost")
+		}
+		if len(message.Links) != 1 {
+			t.Fatal("plain text URL lost")
+		}
+		if message.Links[0].Role != role || message.Links[0].Author.ID != message.Author.ID || message.Links[0].MessageID != message.MessageID || message.Links[0].ID == "" {
+			t.Fatal("link authorship lost")
+		}
+		if i < 2 {
+			file := message.Attachments[0]
+			if file.Role != role || file.Author.ID != message.Author.ID || file.TimeCreated != bundle.Messages[i].TimeCreated {
+				t.Fatal("file authorship lost")
+			}
+		}
+	}
+	if result.Messages[0].Attachments[0].ID == result.Messages[1].Attachments[0].ID {
+		t.Fatal("same URL from different authors merged")
+	}
+	unassigned := NormalizeHomework(bundle)
+	if unassigned.Messages[0].Role != "unknown" {
+		t.Fatal("name or numeric UID inferred a role")
 	}
 }

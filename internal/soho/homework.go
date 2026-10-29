@@ -48,8 +48,9 @@ type SimpleHomeworkDetails struct {
 }
 
 type MessageAuthor struct {
-	ID  string `json:"id"`
-	UID int64  `json:"uid"`
+	Name *string `json:"name"`
+	ID   string  `json:"id"`
+	UID  int64   `json:"uid"`
 }
 
 type HomeworkMessage struct {
