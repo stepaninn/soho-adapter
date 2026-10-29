@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type DownloadOptions struct {
@@ -31,6 +32,10 @@ type Downloader struct {
 }
 
 type DownloadResult struct {
+	FinalURL   string
+	Text       string
+	Links      []MaterialReference
+	Images     []Attachment
 	Attachment Attachment
 	Path       string
 	Bytes      int64
@@ -125,9 +130,22 @@ func PrivateDirectory(path string) error {
 }
 
 func (d *Downloader) DownloadAttachment(ctx context.Context, attachment Attachment, directory string) (DownloadResult, error) {
+	return d.downloadResource(ctx, attachment, directory, false)
+}
+
+func (d *Downloader) FetchLink(ctx context.Context, reference MaterialReference, directory string) (DownloadResult, error) {
+	if reference.Purpose != "external-link" {
+		return DownloadResult{}, fmt.Errorf("resource is not an external link")
+	}
+	return d.downloadResource(ctx, Attachment{MaterialReference: reference}, directory, true)
+}
+
+func (d *Downloader) downloadResource(ctx context.Context, attachment Attachment, directory string, allowHTML bool) (DownloadResult, error) {
 	result := DownloadResult{Attachment: attachment, State: "failed"}
 	fail := func(message string) (DownloadResult, error) {
 		result.Error = message
+		result.Attachment.State = result.State
+		result.Attachment.FetchError = message
 		if err := ctx.Err(); err != nil {
 			return result, fmt.Errorf("download canceled: %w", err)
 		}
@@ -136,10 +154,17 @@ func (d *Downloader) DownloadAttachment(ctx context.Context, attachment Attachme
 	if err := ctx.Err(); err != nil {
 		return fail("download canceled")
 	}
-	if attachment.Purpose != "file" && attachment.Purpose != "inline-image" {
+	if attachment.Purpose != "file" && attachment.Purpose != "inline-image" && !(allowHTML && attachment.Purpose == "external-link") {
 		return fail("resource is not a downloadable attachment")
 	}
-	if err := d.validateURL(attachment.URL); err != nil {
+	requestURL := attachment.URL
+	if allowHTML {
+		if parsed, err := url.Parse(requestURL); err == nil {
+			parsed.Fragment = ""
+			requestURL = parsed.String()
+		}
+	}
+	if err := d.validateURL(requestURL); err != nil {
 		return fail(err.Error())
 	}
 	if attachment.Name == "." || attachment.Name == ".." || strings.ContainsAny(attachment.Name, "/\\\x00\r\n") || filepath.IsAbs(attachment.Name) {
@@ -160,12 +185,29 @@ func (d *Downloader) DownloadAttachment(ctx context.Context, attachment Attachme
 		return fail("cannot open output directory")
 	}
 	defer root.Close()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, attachment.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return fail("cannot create download request")
 	}
 	// Отдельный клиент не содержит токен, cookie и контекст организации
-	response, err := d.client.Do(req)
+	requestClient := d.client
+	if allowHTML {
+		clone := *d.client
+		clone.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("linked page redirect limit exceeded")
+			}
+			if err := d.validateURL(next.URL.String()); err != nil {
+				return err
+			}
+			for _, header := range []string{"Authorization", "Cookie", "x-procraft-org", "Referer"} {
+				next.Header.Del(header)
+			}
+			return nil
+		}
+		requestClient = &clone
+	}
+	response, err := requestClient.Do(req)
 	if err != nil {
 		return fail("attachment request failed")
 	}
@@ -212,20 +254,29 @@ func (d *Downloader) DownloadAttachment(ctx context.Context, attachment Attachme
 	if readErr != nil && readErr != io.EOF {
 		return fail("cannot inspect attachment signature")
 	}
-	actual := http.DetectContentType(header[:n])
+	actual, _, _ := mime.ParseMediaType(http.DetectContentType(header[:n]))
 	if bytes.HasPrefix(header[:n], []byte("%PDF-")) {
 		actual = "application/pdf"
 	}
-	if !supportedMIME(actual) {
+	if !supportedMIME(actual) && !(allowHTML && (actual == "text/html" || actual == "text/plain")) {
 		result.State = "unsupported"
 		return fail("unsupported attachment signature")
 	}
 	if attachment.Purpose == "inline-image" && actual == "application/pdf" {
 		return fail("inline image is not an image")
 	}
+	if strings.HasPrefix(actual, "text/plain;") {
+		actual = "text/plain"
+	}
 	declared := response.Header.Get("Content-Type")
 	if declared != "" {
-		mediaType, _, err := mime.ParseMediaType(declared)
+		mediaType, parameters, err := mime.ParseMediaType(declared)
+		if allowHTML && (actual == "text/html" || actual == "text/plain") {
+			charset := strings.ToLower(parameters["charset"])
+			if charset != "" && charset != "utf-8" && charset != "us-ascii" {
+				return fail("unsupported linked page charset")
+			}
+		}
 		if err != nil || (mediaType != "application/octet-stream" && mediaType != actual) {
 			return fail("attachment Content-Type differs from signature")
 		}
@@ -233,13 +284,57 @@ func (d *Downloader) DownloadAttachment(ctx context.Context, attachment Attachme
 	if attachment.MIMEType != "" && attachment.MIMEType != actual {
 		return fail("attachment metadata MIME differs from signature")
 	}
-	extension := map[string]string{"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg"}[actual]
+	extension := map[string]string{"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "text/html": ".html.txt", "text/plain": ".txt"}[actual]
+	if allowHTML && (actual == "text/html" || actual == "text/plain") {
+		source, err := root.ReadFile(temporary)
+		if err != nil {
+			return fail("cannot read saved page")
+		}
+		if !utf8.Valid(source) {
+			return fail("linked page is not UTF-8")
+		}
+		result.Text = string(source)
+		if actual == "text/html" {
+			text, links, images, err := extractHTML(string(source))
+			if err != nil {
+				return fail("cannot parse linked page")
+			}
+			result.Text = text
+			base, _ := url.Parse(requestURL)
+			if response.Request != nil && response.Request.URL != nil {
+				base = response.Request.URL
+			}
+			base = linkedPageBase(string(source), base)
+			childReference := func(raw, purpose string) MaterialReference {
+				reference := attachment.MaterialReference
+				if child, err := url.Parse(raw); err == nil {
+					raw = base.ResolveReference(child).String()
+				}
+				reference.URL, reference.Purpose, reference.State = raw, purpose, "not-fetched"
+				reference.ID = MaterialID(reference.ChatID, reference.MessageID, purpose, raw)
+				return reference
+			}
+			for _, link := range links {
+				result.Links = append(result.Links, childReference(link, "external-link"))
+			}
+			for _, image := range images {
+				result.Images = append(result.Images, Attachment{MaterialReference: childReference(image, "inline-image")})
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return fail("download canceled")
+	}
 	name := "attachment-" + rand.Text() + extension
 	// Публикуем файл атомарно без перезаписи существующего пути
 	if err := root.Link(temporary, name); err != nil {
 		return fail("cannot publish attachment")
 	}
 	result.Path, result.Bytes, result.MIMEType, result.State = filepath.Join(directory, name), count, actual, "downloaded"
+	result.Attachment.State = "downloaded"
+	if response.Request != nil && response.Request.URL != nil {
+		result.FinalURL = response.Request.URL.String()
+	}
 	return result, nil
 }
 

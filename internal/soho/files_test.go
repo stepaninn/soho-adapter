@@ -201,3 +201,66 @@ func TestDownloadCancellationDuringRead(t *testing.T) {
 		t.Fatal("canceled download left temporary file")
 	}
 }
+
+func TestFetchLink(t *testing.T) {
+	for _, tt := range []struct{ name, mime, body string }{
+		{"HTML", "text/html", `<html><head><base href="/tasks/"></head><body><p>Задание &amp; пояснение</p><img src="/task.png"><a href="more">Дополнение</a><script>hidden()</script></body></html>`},
+		{"PDF", "application/pdf", "%PDF-1.7\nsynthetic"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d := testDownloader(t, func(r *http.Request) (*http.Response, error) {
+				if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
+					t.Fatal("credentials on external link")
+				}
+				return &http.Response{StatusCode: 200, ContentLength: -1, Header: http.Header{"Content-Type": []string{tt.mime}}, Body: io.NopCloser(strings.NewReader(tt.body))}, nil
+			})
+			ref := MaterialReference{ID: "root", ChatID: "chat", MessageID: "message", Role: "teacher", Author: &MessageAuthor{ID: "profile"}, Purpose: "external-link", URL: "https://files.test/dir/task"}
+			result, err := d.FetchLink(context.Background(), ref, filepath.Join(t.TempDir(), "private"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Attachment.Role != "teacher" || result.Attachment.Author.ID != "profile" {
+				t.Fatal("source lost")
+			}
+			if tt.name == "HTML" {
+				if strings.Contains(result.Text, "hidden") || !strings.Contains(result.Text, "Задание & пояснение") || len(result.Images) != 1 || len(result.Links) != 1 {
+					t.Fatal("linked content lost")
+				}
+				if result.Images[0].URL != "https://files.test/task.png" || result.Links[0].URL != "https://files.test/tasks/more" || result.Images[0].MessageID != "message" || result.Images[0].Role != "teacher" {
+					t.Fatal("relative link or source lost")
+				}
+				if !strings.HasSuffix(result.Path, ".html.txt") {
+					t.Fatal("HTML saved with executable extension")
+				}
+			}
+		})
+	}
+}
+
+func TestFetchLinkRedirectPolicy(t *testing.T) {
+	for _, allowed := range []bool{true, false} {
+		calls := 0
+		d := testDownloader(t, func(r *http.Request) (*http.Response, error) {
+			calls++
+			if r.Header.Get("Referer") != "" || r.Header.Get("Authorization") != "" {
+				t.Fatal("redirect leaked headers")
+			}
+			if calls == 1 {
+				target := "https://files.test/final/task"
+				if !allowed {
+					target = "https://private.test/"
+				}
+				return &http.Response{StatusCode: 302, Header: http.Header{"Location": []string{target}}, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+			}
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(strings.NewReader(`<html><body><p>Задание</p><img src="figure.png"></body></html>`)), ContentLength: -1, Request: r}, nil
+		})
+		result, err := d.FetchLink(context.Background(), MaterialReference{URL: "https://files.test/short#task", Purpose: "external-link"}, filepath.Join(t.TempDir(), "private"))
+		if allowed {
+			if err != nil || calls != 2 || result.Images[0].URL != "https://files.test/final/figure.png" {
+				t.Fatalf("trusted redirect failed: %v %+v", err, result)
+			}
+		} else if err == nil || calls != 1 {
+			t.Fatal("untrusted redirect followed")
+		}
+	}
+}
