@@ -14,7 +14,12 @@ chmod 600 .env
 ```
 
 Заполните логин и пароль в редакторе. Секреты из HAR не используются.
-В `.env` можно один раз указать проверенные хосты файлов и внешних заданий:
+Для обычного скачивания двух уже подтверждённых файловых хостов достаточно
+`SOHO_LOGIN` и `SOHO_PASSWORD`. Встроенный список включает
+`app-uploads-prod.storage.yandexcloud.net` и файловый хост `selstorage.ru`,
+полученный в текущем проекте. `SOHO_RESOURCE_HOSTS` не является требованием API;
+это необязательное дополнение списка для других файловых хостов и внешних
+заданий. Расширенные настройки:
 
 ```dotenv
 SOHO_LOGIN=ваш_логин
@@ -52,7 +57,7 @@ SOHO_AUTHOR_ROLES_FILE=downloads/author-roles.json
 
 Для подтверждённого сопоставления:
 
-1. Экспортируйте чат без файла ролей и откройте manifest локально
+1. Экспортируйте чат без файла ролей (`--metadata-only`) и откройте manifest локально
 2. Сверьте авторов с сайтом по сообщениям и времени
 3. Скопируйте `author-roles.example.json` в `downloads/author-roles.json`
 4. Замените ключ чата на `Materials.Bundle.ChatID`, а ключи авторов — на
@@ -82,9 +87,10 @@ go run . --chat-number 1 --out downloads/review
 go run . --chat-id 'GRAPHQL_ID' --out downloads/review --fetch-links
 ```
 
-При заданном `SOHO_RESOURCE_HOSTS` команда скачает PDF/PNG/JPEG и получит
-HTML/текст по исходным внешним ссылкам. Хосты можно переопределить флагом
-`--allow-file-host 'host1,host2'`. Без разрешённых хостов загрузки нет.
+Команда скачает PDF/PNG/JPEG с подтверждённых хостов и получит
+HTML/текст по исходным внешним ссылкам с разрешённых доменов. Дополнительные хосты можно указать флагом
+`--allow-file-host 'host1,host2'` или через `SOHO_RESOURCE_HOSTS`.
+Для экспорта без скачивания есть `--metadata-only`.
 Без `--fetch-links` ссылки сохраняются в manifest со статусом `not-requested`;
 их число входит в сводку неполученных материалов, они не исчезают из результата.
 
@@ -193,7 +199,7 @@ go build -o /tmp/soho-adapter .
 SDK-клиентом и сервером через `NewInMemoryTransports`, без SOHO и TCP:
 
 ```sh
-go test ./... -run '^(TestMCP|TestAuthorRole|TestMaterial|TestFetchLink|TestReview|TestInspect|TestParseOptions|TestRun|TestNormalize|TestDownload|TestGetHomeworkBundle|TestReadEnvFile|TestCredentialsFromEnvFile|TestListHomeworkChats|TestOrganizationIDFromToken|TestClientRejectsRedirect)' -count=1
+go test ./... -run '^(TestDefaultDownload|TestMCP|TestAuthorRole|TestMaterial|TestFetchLink|TestReview|TestInspect|TestParseOptions|TestRun|TestNormalize|TestDownload|TestGetHomeworkBundle|TestReadEnvFile|TestCredentialsFromEnvFile|TestListHomeworkChats|TestOrganizationIDFromToken|TestClientRejectsRedirect)' -count=1
 go test -race ./internal/mcpserver ./internal/soho -run '^(TestMCP|TestReview)' -count=1
 ```
 

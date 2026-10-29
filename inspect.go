@@ -17,6 +17,7 @@ import (
 )
 
 type inspectOptions struct {
+	MetadataOnly bool
 	ChatID       string
 	ChatNumber   int
 	MessageLimit int
@@ -42,6 +43,7 @@ func parseOptions(args []string, out io.Writer) (inspectOptions, error) {
 	flags.StringVar(&options.Hosts, "allow-file-host", "", "Разрешённые хосты файлов через запятую, включает скачивание")
 	flags.Int64Var(&options.MaxBytes, "max-file-bytes", 20<<20, "Предел размера одного файла")
 	flags.StringVar(&options.EnvFile, "env-file", ".env", "Путь к локальным настройкам")
+	flags.BoolVar(&options.MetadataOnly, "metadata-only", false, "Сохранить описание материалов без скачивания")
 	flags.BoolVar(&options.Verbose, "verbose", false, "Подробная диагностика")
 	flags.BoolVar(&options.MCP, "mcp", false, "Запустить MCP по stdin/stdout")
 	flags.BoolVar(&options.FetchLinks, "fetch-links", false, "Получить содержимое внешних ссылок")
@@ -57,9 +59,20 @@ func parseOptions(args []string, out io.Writer) (inspectOptions, error) {
 		options.RolesFile = setting(values, "SOHO_AUTHOR_ROLES_FILE")
 	}
 	if options.MCP || options.Out != "" {
-		if options.Hosts == "" {
-			options.Hosts = setting(values, "SOHO_RESOURCE_HOSTS")
+		extraHosts := options.Hosts
+		if extraHosts == "" {
+			extraHosts = setting(values, "SOHO_RESOURCE_HOSTS")
 		}
+		options.Hosts = strings.Join(soho.DefaultResourceHosts(), ",")
+		if extraHosts != "" {
+			options.Hosts += "," + extraHosts
+		}
+	}
+	if options.MetadataOnly {
+		if options.MCP || options.FetchLinks {
+			return options, fmt.Errorf("metadata-only cannot be combined with MCP or fetch-links")
+		}
+		options.Hosts = ""
 	}
 	if options.MCP {
 		if options.ChatID != "" || options.ChatNumber != 0 || options.FetchLinks {
@@ -162,7 +175,7 @@ func inspectHomework(ctx context.Context, out io.Writer, client *soho.Client, op
 		return nil
 	}
 	if options.Hosts == "" && len(attachments) > 0 {
-		fmt.Fprintln(out, "Скачивание не запрошено: сохранится только manifest, для файлов добавьте --allow-file-host")
+		fmt.Fprintln(out, "Скачивание не запрошено: сохранены только метаданные")
 	}
 	manifest := struct {
 		Materials soho.HomeworkMaterials

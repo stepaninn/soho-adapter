@@ -341,3 +341,8 @@ func (d *Downloader) downloadResource(ctx context.Context, attachment Attachment
 func supportedMIME(value string) bool {
 	return value == "application/pdf" || value == "image/png" || value == "image/jpeg"
 }
+
+// Подтверждённые файловые хосты SOHO для обычного скачивания
+func DefaultResourceHosts() []string {
+	return []string{"app-uploads-prod.storage.yandexcloud.net", "0511e607-0c12-4306-b663-167f2a1c7f7d.selstorage.ru"}
+}
