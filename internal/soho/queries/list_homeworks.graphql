@@ -1,0 +1,42 @@
+# Read-only selection derived from the observed InboxQuery. Not replayed.
+query ListHomeworkChats(
+  $after: String
+  $search: String
+  $group: String
+  $dateFrom: String
+  $dateTo: String
+  $homeworkStatuses: [LearningStudentHomeworkProgressStatus!]
+  $academicDisciplines: [Int!]
+  $onlyAttention: Boolean = false
+  $onlyMy: Boolean = true
+  $minPriority: Int
+  $deadlineOverdue: Boolean = false
+  $sortDesc: Boolean = true
+  $transports: [ChatFilterTransportInput!]
+  $academicHomeworkIds: [Int!]
+  $limit: Int = 30
+  $chatMessageLabels: [Int!]
+  $orgUnitUid: Int
+  $clientTagIds: [Int!]
+) {
+  viewer {
+    chats(search: $search, group: $group, dateFrom: $dateFrom, dateTo: $dateTo, homeworkStatuses: $homeworkStatuses, academicDisciplines: $academicDisciplines, academicHomeworkIds: $academicHomeworkIds, onlyAttention: $onlyAttention, onlyMy: $onlyMy, minPriority: $minPriority, deadlineOverdue: $deadlineOverdue, sortDesc: $sortDesc, first: $limit, after: $after, transports: $transports, chatMessageLabels: $chatMessageLabels, orgUnitUid: $orgUnitUid, clientTagIds: $clientTagIds) {
+      hasMultiplePriority @skip(if: $sortDesc)
+      pageInfo { hasNextPage endCursor }
+      edges {
+        cursor
+        node {
+          id
+          uid
+          chatType
+          lastUpdated
+          chatPriority
+          chatPriorityEducation
+          unreadCount
+          messageFirstUnread { id timeCreated }
+          studentHomework { id uid mergedStatus }
+        }
+      }
+    }
+  }
+}
