@@ -29,6 +29,17 @@ query ListHomeworkChats(
           id
           uid
           chatType
+          title
+          chatPeer {
+            __typename
+            ... on ChatPeerHomework {
+              student {
+                __typename
+                ... on ChatPeerUser { name }
+                ... on ChatPeerOrg { name }
+              }
+            }
+          }
           lastUpdated
           chatPriority
           chatPriorityEducation

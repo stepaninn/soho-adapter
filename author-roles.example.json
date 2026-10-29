@@ -1,0 +1,6 @@
+{
+  "CHAT_GRAPHQL_ID": {
+    "TEACHER_MESSAGE_AUTHOR_PROFILE_ID": "teacher",
+    "STUDENT_MESSAGE_AUTHOR_PROFILE_ID": "student"
+  }
+}

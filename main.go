@@ -10,7 +10,10 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stepaninn/soho-adapter/internal/mcpserver"
 	"github.com/stepaninn/soho-adapter/internal/soho"
+	"strings"
 )
 
 func main() {
@@ -32,7 +35,11 @@ func run(out io.Writer) error {
 }
 
 func runConfigured(out io.Writer, options inspectOptions) error {
-	login, password, err := credentialsFromEnvFile(".env")
+	envFile := options.EnvFile
+	if envFile == "" {
+		envFile = ".env"
+	}
+	login, password, err := credentialsFromEnvFile(envFile)
 	if err != nil {
 		return err
 	}
@@ -54,20 +61,38 @@ func runConfigured(out io.Writer, options inspectOptions) error {
 		return fmt.Errorf("create client: %w", err)
 	}
 
-	fmt.Fprintln(out, "Logging in...")
+	if options.Verbose && !options.MCP {
+		fmt.Fprintln(out, "Logging in...")
+	}
 
 	if err := client.Authenticate(ctx, login, password); err != nil {
 		return fmt.Errorf("prepare session: %w", err)
 	}
 
-	fmt.Fprintln(out, "Verifying access to organization...")
+	if options.Verbose && !options.MCP {
+		fmt.Fprintln(out, "Verifying access to organization...")
+	}
 
 	if _, err := client.CurrentOrganization(ctx); err != nil {
 		return fmt.Errorf("read organization: %w", err)
 	}
 
-	fmt.Fprintln(out, "The login has been completed, organization context has been confirmed")
+	if options.Verbose && !options.MCP {
+		fmt.Fprintln(out, "The login has been completed, organization context has been confirmed")
+	}
 
+	if options.MCP {
+		var downloader *soho.Downloader
+		if options.Hosts != "" {
+			downloader, err = soho.NewDownloader(soho.DownloadOptions{AllowedHosts: strings.Split(options.Hosts, ","), MaxBytes: options.MaxBytes, Timeout: 30 * time.Second})
+			if err != nil {
+				return err
+			}
+			defer downloader.Close()
+		}
+		service := soho.NewReviewService(client, downloader, options.Out, options.AuthorRoles)
+		return mcpserver.New(service).Run(signalCtx, &mcp.StdioTransport{})
+	}
 	if options.ChatID != "" {
 		return inspectHomework(ctx, out, client, options)
 	}
@@ -80,6 +105,14 @@ func runConfigured(out io.Writer, options inspectOptions) error {
 	})
 	if err != nil {
 		return fmt.Errorf("read homework chat page: %w", err)
+	}
+
+	if options.ChatNumber > 0 {
+		if options.ChatNumber > len(page.Chats) {
+			return fmt.Errorf("chat number exceeds page size")
+		}
+		options.ChatID = page.Chats[options.ChatNumber-1].ID
+		return inspectHomework(ctx, out, client, options)
 	}
 
 	fmt.Fprintf(out, "Homework chats on this page: %d\n", len(page.Chats))
@@ -98,12 +131,5 @@ func runConfigured(out io.Writer, options inspectOptions) error {
 		fmt.Fprintln(out, "More chats are available; only the first page was loaded.")
 	}
 
-	if options.ChatNumber > 0 {
-		if options.ChatNumber > len(page.Chats) {
-			return fmt.Errorf("chat number exceeds page size")
-		}
-		options.ChatID = page.Chats[options.ChatNumber-1].ID
-		return inspectHomework(ctx, out, client, options)
-	}
 	return nil
 }

@@ -15,6 +15,7 @@ import (
 )
 
 func TestParseOptions(t *testing.T) {
+	t.Chdir(t.TempDir())
 	for _, args := range [][]string{{"--chat-number=-1"}, {"--out=private"}, {"--chat-id=id", "--chat-number=1"}, {"--chat-id=id", "--allow-file-host=files.test"}, {"--message-limit=0"}, {"--max-file-bytes=0"}, {"unexpected"}} {
 		if _, err := parseOptions(args, io.Discard); err == nil {
 			t.Errorf("invalid arguments accepted: %v", args)
@@ -50,7 +51,7 @@ func TestInspectHomeworkManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := inspectHomework(context.Background(), &out, c, inspectOptions{ChatID: "chat-test", MessageLimit: 20, Out: directory}); err != nil {
+	if err := inspectHomework(context.Background(), &out, c, inspectOptions{ChatID: "chat-test", MessageLimit: 20, Out: directory, Verbose: true}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "https://master.soholms.com/inbox/42") || !strings.Contains(out.String(), "not-requested") {

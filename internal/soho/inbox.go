@@ -24,10 +24,13 @@ type HomeworkSummary struct {
 }
 
 type ChatSummary struct {
-	ID              string           `json:"id"`
-	UID             int64            `json:"uid"`
-	ChatType        string           `json:"chatType"`
-	StudentHomework *HomeworkSummary `json:"studentHomework"`
+	Title           *string           `json:"title"`
+	LastUpdated     *string           `json:"lastUpdated"`
+	ChatPeer        *HomeworkChatPeer `json:"chatPeer"`
+	ID              string            `json:"id"`
+	UID             int64             `json:"uid"`
+	ChatType        string            `json:"chatType"`
+	StudentHomework *HomeworkSummary  `json:"studentHomework"`
 }
 
 type PageInfo struct {

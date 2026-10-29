@@ -1,0 +1,5 @@
+[mcp_servers.soho]
+command = "/absolute/path/to/SohoLMS/soho-adapter"
+args = ["--mcp", "--env-file", "/absolute/path/to/SohoLMS/.env"]
+startup_timeout_sec = 90
+tool_timeout_sec = 90

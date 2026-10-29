@@ -23,6 +23,12 @@ type inspectOptions struct {
 	Out          string
 	Hosts        string
 	MaxBytes     int64
+	Verbose      bool
+	MCP          bool
+	FetchLinks   bool
+	EnvFile      string
+	RolesFile    string
+	AuthorRoles  map[string]map[string]string
 }
 
 func parseOptions(args []string, out io.Writer) (inspectOptions, error) {
@@ -35,7 +41,45 @@ func parseOptions(args []string, out io.Writer) (inspectOptions, error) {
 	flags.StringVar(&options.Out, "out", "", "Приватный каталог материалов")
 	flags.StringVar(&options.Hosts, "allow-file-host", "", "Разрешённые хосты файлов через запятую, включает скачивание")
 	flags.Int64Var(&options.MaxBytes, "max-file-bytes", 20<<20, "Предел размера одного файла")
+	flags.StringVar(&options.EnvFile, "env-file", ".env", "Путь к локальным настройкам")
+	flags.BoolVar(&options.Verbose, "verbose", false, "Подробная диагностика")
+	flags.BoolVar(&options.MCP, "mcp", false, "Запустить MCP по stdin/stdout")
+	flags.BoolVar(&options.FetchLinks, "fetch-links", false, "Получить содержимое внешних ссылок")
+	flags.StringVar(&options.RolesFile, "roles-file", "", "JSON сопоставления профилей авторов по чатам")
 	if err := flags.Parse(args); err != nil {
+		return options, err
+	}
+	values, err := readEnvFile(options.EnvFile)
+	if err != nil {
+		return options, err
+	}
+	if options.RolesFile == "" {
+		options.RolesFile = setting(values, "SOHO_AUTHOR_ROLES_FILE")
+	}
+	if options.MCP || options.Out != "" {
+		if options.Hosts == "" {
+			options.Hosts = setting(values, "SOHO_RESOURCE_HOSTS")
+		}
+	}
+	if options.MCP {
+		if options.ChatID != "" || options.ChatNumber != 0 || options.FetchLinks {
+			return options, fmt.Errorf("MCP selects homework through tools")
+		}
+		if options.Out == "" {
+			options.Out = setting(values, "SOHO_OUTPUT_DIR")
+			if options.Out == "" {
+				options.Out = "downloads/mcp"
+			}
+			if !filepath.IsAbs(options.Out) {
+				options.Out = filepath.Join(filepath.Dir(options.EnvFile), options.Out)
+			}
+		}
+	}
+	if options.RolesFile != "" && !filepath.IsAbs(options.RolesFile) {
+		options.RolesFile = filepath.Join(filepath.Dir(options.EnvFile), options.RolesFile)
+	}
+	options.AuthorRoles, err = readAuthorRoles(options.RolesFile)
+	if err != nil {
 		return options, err
 	}
 	if flags.NArg() != 0 || options.ChatNumber < 0 || options.MessageLimit <= 0 || options.MaxBytes <= 0 || options.MaxBytes > 1<<30 {
@@ -44,10 +88,10 @@ func parseOptions(args []string, out io.Writer) (inspectOptions, error) {
 	if options.ChatID != "" && options.ChatNumber != 0 {
 		return options, fmt.Errorf("choose chat-id or chat-number")
 	}
-	if (options.Out != "" || options.Hosts != "") && options.ChatID == "" && options.ChatNumber == 0 {
+	if (options.Out != "" || options.Hosts != "") && options.ChatID == "" && options.ChatNumber == 0 && !options.MCP {
 		return options, fmt.Errorf("choose a chat before exporting materials")
 	}
-	if options.Hosts != "" && options.Out == "" {
+	if (options.Hosts != "" || options.FetchLinks) && options.Out == "" {
 		return options, fmt.Errorf("downloads require --out")
 	}
 	if options.Hosts != "" {
@@ -70,7 +114,7 @@ func inspectHomework(ctx context.Context, out io.Writer, client *soho.Client, op
 	if err != nil {
 		return err
 	}
-	materials := soho.NormalizeHomework(bundle)
+	materials := soho.NormalizeHomeworkWithRoles(bundle, options.AuthorRoles[bundle.ChatID])
 	fmt.Fprintf(out, "Chat: %s\nMessages: %d\nHistory complete: %t\n", materials.ChatURL, len(bundle.Messages), bundle.Complete)
 	var student *string
 	if bundle.ChatPeer != nil && bundle.ChatPeer.TypeName == "ChatPeerHomework" && bundle.ChatPeer.Student != nil {
@@ -84,7 +128,7 @@ func inspectHomework(ctx context.Context, out io.Writer, client *soho.Client, op
 	}
 	seenWarnings := make(map[string]bool)
 	for _, warning := range materials.Warnings {
-		if !seenWarnings[warning] {
+		if !seenWarnings[warning] && options.Verbose {
 			fmt.Fprintln(out, "Warning:", warning)
 			seenWarnings[warning] = true
 		}
@@ -93,12 +137,14 @@ func inspectHomework(ctx context.Context, out io.Writer, client *soho.Client, op
 	attachments := []soho.Attachment{}
 	for index, message := range materials.Messages {
 		attachments = append(attachments, message.Attachments...)
-		fmt.Fprintf(out, "Message: %d links, %d attachments\n", len(message.Links), len(message.Attachments))
-		created := bundle.Messages[index].TimeCreated
-		if created == "" {
-			created = "не указана"
+		if options.Verbose {
+			fmt.Fprintf(out, "Message: %d links, %d attachments\n", len(message.Links), len(message.Attachments))
+			created := bundle.Messages[index].TimeCreated
+			if created == "" {
+				created = "не указана"
+			}
+			fmt.Fprintln(out, "Дата сообщения:", created)
 		}
-		fmt.Fprintln(out, "Дата сообщения:", created)
 		for _, attachment := range message.Attachments {
 			u, err := url.Parse(attachment.URL)
 			if err == nil && u.Scheme == "https" && u.User == nil && u.Hostname() != "" {
@@ -106,9 +152,12 @@ func inspectHomework(ctx context.Context, out io.Writer, client *soho.Client, op
 			}
 		}
 	}
-	for host := range hosts {
-		fmt.Fprintln(out, "Attachment host (review before allowing):", host)
+	if options.Verbose {
+		for host := range hosts {
+			fmt.Fprintln(out, "Attachment host (review before allowing):", host)
+		}
 	}
+	printMaterialGroups(out, materials)
 	if options.Out == "" {
 		return nil
 	}
@@ -131,14 +180,37 @@ func inspectHomework(ctx context.Context, out io.Writer, client *soho.Client, op
 	for _, attachment := range attachments {
 		result := soho.DownloadResult{Attachment: attachment, State: "not-requested"}
 		if downloader != nil {
-			result, err = downloader.DownloadAttachment(ctx, attachment, options.Out)
+			result, err = downloader.DownloadAttachment(ctx, attachment, roleDirectory(options.Out, attachment.Role))
 			if err != nil {
 				failed = true
 			}
 		}
 		manifest.Downloads = append(manifest.Downloads, result)
-		fmt.Fprintln(out, "Attachment:", result.State)
+		if options.Verbose {
+			fmt.Fprintln(out, "Attachment:", result.State)
+		}
 	}
+	for _, message := range materials.Messages {
+		for _, link := range message.Links {
+			result := soho.DownloadResult{Attachment: soho.Attachment{MaterialReference: link}, State: "not-requested"}
+			if options.FetchLinks && downloader != nil {
+				result, err = downloader.FetchLink(ctx, link, roleDirectory(options.Out, link.Role))
+				if err != nil {
+					failed = true
+				}
+			}
+			manifest.Downloads = append(manifest.Downloads, result)
+		}
+	}
+	downloaded, pending := 0, 0
+	for _, result := range manifest.Downloads {
+		if result.State == "downloaded" {
+			downloaded++
+		} else {
+			pending++
+		}
+	}
+	fmt.Fprintf(out, "Получено материалов: %d; не получено: %d\n", downloaded, pending)
 	root, err := os.OpenRoot(options.Out)
 	if err != nil {
 		return fmt.Errorf("cannot open manifest directory")
@@ -159,7 +231,7 @@ func inspectHomework(ctx context.Context, out io.Writer, client *soho.Client, op
 	}
 	fmt.Fprintln(out, "Manifest:", filepath.Join(options.Out, name))
 	if failed {
-		return fmt.Errorf("some attachments were not downloaded; see manifest")
+		return fmt.Errorf("some materials were not fetched; see manifest")
 	}
 	return nil
 }
@@ -169,4 +241,36 @@ func displayValue(value *string) string {
 		return "не указано"
 	}
 	return *value
+}
+
+func roleDirectory(base, role string) string {
+	if role != "teacher" && role != "student" {
+		role = "unknown"
+	}
+	return filepath.Join(base, role)
+}
+
+func printMaterialGroups(out io.Writer, materials soho.HomeworkMaterials) {
+	for _, role := range []string{"teacher", "student", "unknown"} {
+		count, files, links := 0, 0, 0
+		for _, message := range materials.Messages {
+			if message.Role == role {
+				count++
+				files += len(message.Attachments)
+				links += len(message.Links)
+			}
+		}
+		if count > 0 {
+			fmt.Fprintf(out, "%s: сообщений %d, файлов %d, ссылок %d\n", map[string]string{"teacher": "Преподаватель", "student": "Ученик", "unknown": "Неопределённая роль"}[role], count, files, links)
+		}
+	}
+	if !materials.Bundle.Complete {
+		fmt.Fprintln(out, "Внимание: контекст или история неполны")
+	}
+	for _, message := range materials.Messages {
+		if message.Role == "unknown" {
+			fmt.Fprintln(out, "Сопоставьте профили авторов через --roles-file; имена и ID сохранены в manifest")
+			break
+		}
+	}
 }
