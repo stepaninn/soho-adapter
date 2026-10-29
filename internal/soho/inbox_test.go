@@ -12,8 +12,7 @@ import (
 	"testing"
 )
 
-// inboxTransport runs a local HTTP handler without opening a TCP port.
-// It keeps the real Client, request encoding and response decoding in the test.
+// Вызываем HTTP-обработчик в памяти без TCP-порта
 type inboxTransport func(*http.Request) (*http.Response, error)
 
 func (f inboxTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -67,7 +66,7 @@ func TestListHomeworkChatsPageRequest(t *testing.T) {
 					w.WriteHeader(400)
 					return
 				}
-				// Assert the query's operation and variable wiring, not just the embed variable itself.
+				// Проверяем операцию и передачу переменных в запрос
 				for _, fragment := range []string{"query ListHomeworkChats(", "group: $group", "onlyAttention: $onlyAttention", "onlyMy: $onlyMy", "sortDesc: $sortDesc", "first: $limit", "after: $after", "pageInfo { hasNextPage endCursor }", "studentHomework { id uid mergedStatus }"} {
 					if !strings.Contains(request.Query, fragment) {
 						t.Errorf("query missing %q", fragment)

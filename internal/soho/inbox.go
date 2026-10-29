@@ -139,10 +139,6 @@ func (c *Client) ListHomeworkChatsPage(
 	return page, nil
 }
 
-// ListHomeworkChats collects chats starting at options.After (nil means the first
-// page). Filters and page size remain fixed. A repeated chat replaces its earlier
-// value without changing position. On any failure the partial list is discarded.
-// The result is not a snapshot: chats may change while pages are being fetched.
 func (c *Client) ListHomeworkChats(
 	ctx context.Context,
 	options ListHomeworkChatsOptions,
@@ -156,7 +152,7 @@ func (c *Client) ListHomeworkChats(
 	positions := make(map[string]int)
 	seenCursors := make(map[string]bool)
 	if options.After != nil {
-		// Own the cursor value rather than modifying the caller's pointer.
+		// Копируем курсор вызывающего кода
 		after := *options.After
 		options.After = &after
 		seenCursors[after] = true
@@ -182,7 +178,7 @@ func (c *Client) ListHomeworkChats(
 			return chats, nil
 		}
 
-		// ListHomeworkChatsPage already checks that a continuation cursor is present.
+		// Наличие курсора уже проверено при чтении страницы
 		next := *page.PageInfo.EndCursor
 		if seenCursors[next] {
 			return nil, fmt.Errorf("homework chat pagination cursor repeated after page %d", pageNumber)

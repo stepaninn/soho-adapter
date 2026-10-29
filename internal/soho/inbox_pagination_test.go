@@ -22,7 +22,7 @@ func TestListHomeworkChats(t *testing.T) {
 	original := ChatSummary{ID: "b", UID: 1, StudentHomework: &HomeworkSummary{ID: "hw", MergedStatus: "OnReview"}}
 	updated := original
 	updated.StudentHomework = &HomeworkSummary{ID: "hw", MergedStatus: "ReviewedCorrect"}
-	other := ChatSummary{ID: "a", UID: 1} // Same numeric UID must not cause deduplication.
+	other := ChatSummary{ID: "a", UID: 1} // Одинаковый UID не означает одинаковый чат
 	for _, tt := range []struct {
 		name      string
 		pages     []inboxTestPage
