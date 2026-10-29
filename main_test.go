@@ -23,6 +23,7 @@ func setCLITransport(t *testing.T, transport cliTransport) {
 }
 
 func TestRunMissingCredentials(t *testing.T) {
+	t.Chdir(t.TempDir())
 	for _, tt := range []struct{ name, login, password string }{
 		{"both missing", "", ""},
 		{"login missing", "", "test-password"},
@@ -47,6 +48,7 @@ func TestRunMissingCredentials(t *testing.T) {
 }
 
 func TestRunHomeworkPage(t *testing.T) {
+	t.Chdir(t.TempDir())
 	for _, tt := range []struct {
 		name, response string
 		wantErr        bool

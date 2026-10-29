@@ -19,11 +19,9 @@ func main() {
 }
 
 func run(out io.Writer) error {
-	login := os.Getenv("SOHO_LOGIN")
-	password := os.Getenv("SOHO_PASSWORD")
-
-	if login == "" || password == "" {
-		return fmt.Errorf("set SOHO_LOGIN and SOHO_PASSWORD")
+	login, password, err := credentialsFromEnvFile(".env")
+	if err != nil {
+		return err
 	}
 
 	signalCtx, stop := signal.NotifyContext(
