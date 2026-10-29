@@ -246,9 +246,9 @@ func TestFetchLinkRedirectPolicy(t *testing.T) {
 				t.Fatal("redirect leaked headers")
 			}
 			if calls == 1 {
-				target := "https://files.test/final/task"
+				target := "https://tasks.test/final/task"
 				if !allowed {
-					target = "https://private.test/"
+					target = "https://127.0.0.1/"
 				}
 				return &http.Response{StatusCode: 302, Header: http.Header{"Location": []string{target}}, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
 			}
@@ -256,11 +256,43 @@ func TestFetchLinkRedirectPolicy(t *testing.T) {
 		})
 		result, err := d.FetchLink(context.Background(), MaterialReference{URL: "https://files.test/short#task", Purpose: "external-link"}, filepath.Join(t.TempDir(), "private"))
 		if allowed {
-			if err != nil || calls != 2 || result.Images[0].URL != "https://files.test/final/figure.png" {
+			if err != nil || calls != 2 || result.Images[0].URL != "https://tasks.test/final/figure.png" {
 				t.Fatalf("trusted redirect failed: %v %+v", err, result)
 			}
 		} else if err == nil || calls != 1 {
-			t.Fatal("untrusted redirect followed")
+			t.Fatal("restricted redirect followed")
 		}
+	}
+}
+
+func TestFetchLinkRejectsUnsafeURLs(t *testing.T) {
+	for _, raw := range []string{
+		"http://tasks.test/task", "https://tasks.test:8443/task", "https://user:secret@tasks.test/task",
+		"https://127.0.0.1/task", "https://10.0.0.1/task", "https://169.254.169.254/task",
+		"https://[::1]/task", "https://[::ffff:127.0.0.1]/task", "https://localhost/task",
+		"https://localhost./task", "https://board.local/task",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			d := testDownloader(t, func(*http.Request) (*http.Response, error) {
+				t.Fatal("unsafe URL reached transport")
+				return nil, nil
+			})
+			_, err := d.FetchLink(context.Background(), MaterialReference{Purpose: "external-link", URL: raw}, t.TempDir())
+			if err == nil || strings.Contains(err.Error(), "secret") {
+				t.Fatal("unsafe URL accepted or credentials exposed")
+			}
+		})
+	}
+}
+
+func TestFetchLinkRedirectLimit(t *testing.T) {
+	calls := 0
+	d := testDownloader(t, func(r *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: 302, Header: http.Header{"Location": []string{"https://tasks.test/loop"}}, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+	})
+	_, err := d.FetchLink(context.Background(), MaterialReference{Purpose: "external-link", URL: "https://tasks.test/loop"}, filepath.Join(t.TempDir(), "private"))
+	if err == nil || calls != 5 {
+		t.Fatalf("redirect limit not enforced: calls=%d, err=%v", calls, err)
 	}
 }

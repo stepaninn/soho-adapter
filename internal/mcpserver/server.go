@@ -29,7 +29,7 @@ type materialInput struct {
 }
 
 func New(service *soho.ReviewService) *mcp.Server {
-	server := mcp.NewServer(&mcp.Implementation{Name: "soho-review", Version: "0.1.1"}, &mcp.ServerOptions{Instructions: workflowGuide})
+	server := mcp.NewServer(&mcp.Implementation{Name: "soho-review", Version: "0.1.2"}, &mcp.ServerOptions{Instructions: workflowGuide})
 	server.AddResource(&mcp.Resource{URI: workflowURI, Name: "soho-workflow", Description: "Порядок показа очереди и предварительной проверки работ", MIMEType: "text/markdown"}, func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: workflowURI, MIMEType: "text/markdown", Text: workflowGuide}}}, nil
 	})
@@ -67,7 +67,7 @@ func New(service *soho.ReviewService) *mcp.Server {
 		result, err := service.Get(ctx, input.ChatID, input.Limit)
 		return nil, result, err
 	})
-	mcp.AddTool(server, &mcp.Tool{Name: "read_material", Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPointer(false), IdempotentHint: true}, Description: "Прочитать материал по ID из get_homework или read_material: PDF, изображение или внешнюю страницу. Сохраняет автора и исходное сообщение. Страница может содержать новые изображения/ссылки: читай нужные по их ID. Неполученные ссылки нельзя опускать в выводах проверки. Не принимает произвольные URL или пути."}, func(ctx context.Context, _ *mcp.CallToolRequest, input materialInput) (*mcp.CallToolResult, any, error) {
+	mcp.AddTool(server, &mcp.Tool{Name: "read_material", Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPointer(false), IdempotentHint: true}, Description: "Прочитать материал по ID из get_homework или read_material: PDF, изображение или публичную HTTPS-страницу без настройки домена. Открывай ссылки на задания, доски и материалы, а также ссылки с неясным назначением. Сохраняет автора и исходное сообщение. Страница может содержать новые изображения/ссылки: читай нужные по их ID. Вход, CAPTCHA и JS-доски могут быть недоступны; отметь неполноту. Не принимает произвольные URL или пути."}, func(ctx context.Context, _ *mcp.CallToolRequest, input materialInput) (*mcp.CallToolResult, any, error) {
 		result, err := service.Read(ctx, input.ID)
 		if err != nil {
 			return nil, result, err

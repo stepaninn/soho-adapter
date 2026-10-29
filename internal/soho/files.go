@@ -110,10 +110,20 @@ func dialPublic(ctx context.Context, network, address string) (net.Conn, error) 
 	return nil, fmt.Errorf("cannot connect to download host")
 }
 
-func (d *Downloader) validateURL(raw string) error {
+func (d *Downloader) validateURL(raw string, publicResource bool) error {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || u.Opaque != "" || (u.Port() != "" && u.Port() != "443") || !d.hosts[strings.ToLower(u.Hostname())] {
-		return fmt.Errorf("attachment URL is not an allowed HTTPS URL")
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || u.Opaque != "" || (u.Port() != "" && u.Port() != "443") {
+		return fmt.Errorf("resource URL must use HTTPS without credentials on port 443")
+	}
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if address, err := netip.ParseAddr(host); err == nil && !publicAddress(address) {
+		return fmt.Errorf("resource URL points to a restricted address")
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") {
+		return fmt.Errorf("resource URL points to a local host")
+	}
+	if !publicResource && !d.hosts[strings.ToLower(u.Hostname())] {
+		return fmt.Errorf("attachment host is not allowed")
 	}
 	return nil
 }
@@ -158,13 +168,15 @@ func (d *Downloader) downloadResource(ctx context.Context, attachment Attachment
 		return fail("resource is not a downloadable attachment")
 	}
 	requestURL := attachment.URL
+	// Ссылки и изображения доступны с публичных хостов без сессии SOHO
+	publicResource := allowHTML || attachment.Purpose == "inline-image"
 	if allowHTML {
 		if parsed, err := url.Parse(requestURL); err == nil {
 			parsed.Fragment = ""
 			requestURL = parsed.String()
 		}
 	}
-	if err := d.validateURL(requestURL); err != nil {
+	if err := d.validateURL(requestURL, publicResource); err != nil {
 		return fail(err.Error())
 	}
 	if attachment.Name == "." || attachment.Name == ".." || strings.ContainsAny(attachment.Name, "/\\\x00\r\n") || filepath.IsAbs(attachment.Name) {
@@ -191,13 +203,13 @@ func (d *Downloader) downloadResource(ctx context.Context, attachment Attachment
 	}
 	// Отдельный клиент не содержит токен, cookie и контекст организации
 	requestClient := d.client
-	if allowHTML {
+	if publicResource {
 		clone := *d.client
 		clone.CheckRedirect = func(next *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("linked page redirect limit exceeded")
 			}
-			if err := d.validateURL(next.URL.String()); err != nil {
+			if err := d.validateURL(next.URL.String(), true); err != nil {
 				return err
 			}
 			for _, header := range []string{"Authorization", "Cookie", "x-procraft-org", "Referer"} {
