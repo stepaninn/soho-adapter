@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +54,7 @@ func TestDownloadAttachment(t *testing.T) {
 				t.Fatal("download or provenance corrupted")
 			}
 			info, _ := os.Stat(result.Path)
-			if info.Mode().Perm() != 0600 {
+			if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 				t.Fatal("file is not private")
 			}
 			second, err := d.DownloadAttachment(context.Background(), attachment, directory)
@@ -156,8 +157,10 @@ func TestDownloadAddressPolicy(t *testing.T) {
 	if err := os.Chmod(directory, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := PrivateDirectory(directory); err == nil {
+	if err := PrivateDirectory(directory); runtime.GOOS != "windows" && err == nil {
 		t.Fatal("public directory accepted")
+	} else if runtime.GOOS == "windows" && err != nil {
+		t.Fatal(err)
 	}
 }
 

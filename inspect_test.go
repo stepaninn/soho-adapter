@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -71,7 +72,7 @@ func TestInspectHomeworkManifest(t *testing.T) {
 	}
 	path := filepath.Join(directory, entries[0].Name())
 	info, _ := os.Stat(path)
-	if info.Mode().Perm() != 0600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatal("manifest is not private")
 	}
 	data, err := os.ReadFile(path)

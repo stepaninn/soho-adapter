@@ -33,6 +33,7 @@ func run(args []string, out io.Writer) error {
 	envFile := flags.String("env-file", ".env", "Путь к настройкам SOHO")
 	chatID := flags.String("chat-id", "", "Проверить выбранный чат, иначе первый из очереди")
 	maxMaterials := flags.Int("max-materials", 2, "Максимум вложений для чтения, 0..5")
+	serverBinary := flags.String("server", "", "Готовая программа MCP без сборки через Go")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -53,13 +54,21 @@ func run(args []string, out io.Writer) error {
 	defer os.RemoveAll(temporary)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	binary := filepath.Join(temporary, "soho-adapter")
-	build := exec.CommandContext(ctx, "go", "build", "-buildvcs=false", "-o", binary, ".")
-	build.Stderr = os.Stderr
-	if err := build.Run(); err != nil {
-		return fmt.Errorf("server build failed")
+	binary := *serverBinary
+	if binary == "" {
+		binary = filepath.Join(temporary, "soho-adapter")
+		build := exec.CommandContext(ctx, "go", "build", "-buildvcs=false", "-o", binary, ".")
+		build.Stderr = os.Stderr
+		if err := build.Run(); err != nil {
+			return fmt.Errorf("server build failed")
+		}
+		fmt.Fprintln(out, "Server build: OK")
+	} else {
+		binary, err = filepath.Abs(binary)
+		if err != nil {
+			return fmt.Errorf("cannot resolve server path")
+		}
 	}
-	fmt.Fprintln(out, "Server build: OK")
 	command := exec.Command(binary, "--mcp", "--env-file", absoluteEnv)
 	var stderr lockedBuffer
 	command.Stderr = &stderr

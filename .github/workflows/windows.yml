@@ -1,0 +1,69 @@
+name: Windows package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Tests
+        run: go test ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Parse setup window
+        shell: powershell
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD/cmd/soho-setup/setup.ps1", [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+      - name: Build package
+        run: go run ./cmd/package-windows
+      - name: Check installer without SOHO access
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sandbox = Join-Path $env:RUNNER_TEMP ('soho-test-' + [Guid]::NewGuid())
+          Expand-Archive dist/soho-windows-amd64.zip -DestinationPath $sandbox
+          $env:USERPROFILE = Join-Path $sandbox 'user'
+          $env:LOCALAPPDATA = Join-Path $sandbox 'local'
+          $env:CODEX_HOME = Join-Path $sandbox 'codex'
+          $setup = Join-Path $sandbox 'SOHO Review/SOHO-Setup.exe'
+          function Install-Fixture([string]$json) {
+            $info = New-Object System.Diagnostics.ProcessStartInfo
+            $info.FileName = $setup
+            $info.Arguments = '--install'
+            $info.UseShellExecute = $false
+            $info.RedirectStandardInput = $true
+            $info.RedirectStandardOutput = $true
+            $info.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+            $process = [System.Diagnostics.Process]::Start($info)
+            $process.StandardInput.Write($json)
+            $process.StandardInput.Close()
+            $result = $process.StandardOutput.ReadToEnd() | ConvertFrom-Json
+            $process.WaitForExit()
+            if ($process.ExitCode -ne 0 -or -not $result.OK) { throw 'Installer backend failed' }
+            $process.Dispose()
+            return $result
+          }
+          $first = Install-Fixture '{"Login":"test-login","Password":"test-password"}'
+          [System.IO.File]::WriteAllText($first.Paths.Skill, 'Custom review rules')
+          $second = Install-Fixture '{}'
+          if ([System.IO.File]::ReadAllText($second.Paths.Skill) -ne 'Custom review rules') { throw 'User skill overwritten' }
+          if (-not (Test-Path $second.Paths.Config)) { throw 'MCP config missing' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soho-windows-amd64
+          path: |
+            dist/soho-windows-amd64.zip
+            dist/soho-windows-amd64.zip.sha256

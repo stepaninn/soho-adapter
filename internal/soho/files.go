@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/stepaninn/soho-adapter/internal/privatefs"
 )
 
 type DownloadOptions struct {
@@ -129,14 +131,7 @@ func (d *Downloader) validateURL(raw string, publicResource bool) error {
 }
 
 func PrivateDirectory(path string) error {
-	if err := os.MkdirAll(path, 0700); err != nil {
-		return fmt.Errorf("cannot create private output directory")
-	}
-	info, err := os.Stat(path)
-	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
-		return fmt.Errorf("output directory must be private (0700)")
-	}
-	return nil
+	return privatefs.Directory(path)
 }
 
 func (d *Downloader) DownloadAttachment(ctx context.Context, attachment Attachment, directory string) (DownloadResult, error) {
