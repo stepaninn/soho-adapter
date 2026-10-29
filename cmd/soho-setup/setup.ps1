@@ -38,11 +38,11 @@ function Invoke-Backend([string]$Action, [string]$InputJson = '{}') {
     }
 }
 
-function Add-Shortcut([string]$Name, [string]$Target, [string]$Arguments = '') {
-    $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'SOHO Review'
-    [void][System.IO.Directory]::CreateDirectory($menu)
+function Add-Shortcut([string]$Name, [string]$Target, [string]$Arguments = '', [string]$Directory = '') {
+    if (-not $Directory) { $Directory = Join-Path ([Environment]::GetFolderPath('Programs')) 'SOHO Review' }
+    [void][System.IO.Directory]::CreateDirectory($Directory)
     $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut((Join-Path $menu ($Name + '.lnk')))
+    $shortcut = $shell.CreateShortcut((Join-Path $Directory ($Name + '.lnk')))
     $shortcut.TargetPath = $Target
     $shortcut.Arguments = $Arguments
     $shortcut.Save()
@@ -129,10 +129,11 @@ $install.Add_Click({ Invoke-Action {
     }
     $paths = $result.Paths
     try {
+        Add-Shortcut 'Правила проверки SOHO' (Join-Path $env:SystemRoot 'System32\notepad.exe') ('"' + $paths.Skill + '"') -Directory ([Environment]::GetFolderPath('DesktopDirectory'))
         Add-Shortcut 'Настройка SOHO' (Join-Path $paths.Directory 'SOHO-Setup.exe')
         Add-Shortcut 'Изменить правила проверки' (Join-Path $env:SystemRoot 'System32\notepad.exe') ('"' + $paths.Skill + '"')
         Add-Shortcut 'Материалы SOHO' (Join-Path $env:SystemRoot 'explorer.exe') ('"' + $paths.Materials + '"')
-        $status.Text = "Установлено. Перезапустите ChatGPT Desktop.`r`nЯрлыки находятся в меню «Пуск» → SOHO Review.`r`nПроверка подключения читает очередь, не изменяя работы."
+        $status.Text = "Установлено. Перезапустите ChatGPT Desktop.`r`n«Правила проверки SOHO» — ярлык на рабочем столе.`r`nДругие ярлыки: меню «Пуск» → SOHO Review."
     } catch {
         $status.Text = 'Установлено, но не удалось создать ярлыки. Кнопки этого окна доступны'
     }
