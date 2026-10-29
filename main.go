@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -12,13 +14,24 @@ import (
 )
 
 func main() {
-	if err := run(os.Stdout); err != nil {
+	options, err := parseOptions(os.Args[1:], os.Stderr)
+	if errors.Is(err, flag.ErrHelp) {
+		return
+	}
+	if err == nil {
+		err = runConfigured(os.Stdout, options)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "Ошибка:", err)
 		os.Exit(1)
 	}
 }
 
 func run(out io.Writer) error {
+	return runConfigured(out, inspectOptions{MessageLimit: 20, MaxBytes: 20 << 20})
+}
+
+func runConfigured(out io.Writer, options inspectOptions) error {
 	login, password, err := credentialsFromEnvFile(".env")
 	if err != nil {
 		return err
@@ -55,6 +68,10 @@ func run(out io.Writer) error {
 
 	fmt.Fprintln(out, "The login has been completed, organization context has been confirmed")
 
+	if options.ChatID != "" {
+		return inspectHomework(ctx, out, client, options)
+	}
+
 	page, err := client.ListHomeworkChatsPage(ctx, soho.ListHomeworkChatsOptions{
 		OnlyAttention: true,
 		OnlyMy:        true,
@@ -75,10 +92,18 @@ func run(out io.Writer) error {
 			}
 		}
 		fmt.Fprintf(out, "%d. Status: %s\n", i+1, status)
+		fmt.Fprintln(out, "Chat:", soho.ChatURL(chat.UID))
 	}
 	if page.PageInfo.HasNextPage {
 		fmt.Fprintln(out, "More chats are available; only the first page was loaded.")
 	}
 
+	if options.ChatNumber > 0 {
+		if options.ChatNumber > len(page.Chats) {
+			return fmt.Errorf("chat number exceeds page size")
+		}
+		options.ChatID = page.Chats[options.ChatNumber-1].ID
+		return inspectHomework(ctx, out, client, options)
+	}
 	return nil
 }
