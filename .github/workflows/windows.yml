@@ -23,10 +23,14 @@ jobs:
       - name: Parse setup window
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Stop'
+          $scriptPath = Join-Path $PWD 'cmd/soho-setup/setup.ps1'
+          # ParseFile uses the Windows code page for UTF-8 files without a BOM.
+          $source = [System.IO.File]::ReadAllText($scriptPath, [System.Text.Encoding]::UTF8)
           $tokens = $null
           $parseErrors = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD/cmd/soho-setup/setup.ps1", [ref]$tokens, [ref]$parseErrors)
-          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          [void][System.Management.Automation.Language.Parser]::ParseInput($source, $scriptPath, [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count) { throw ($parseErrors | Format-List Message, Extent | Out-String) }
       - name: Build package
         run: go run ./cmd/package-windows
       - name: Check setup window and installation without SOHO access
