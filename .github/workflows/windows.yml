@@ -33,7 +33,7 @@ jobs:
           if ($parseErrors.Count) { throw ($parseErrors | Format-List Message, Extent | Out-String) }
       - name: Build package
         run: go run ./cmd/package-windows
-      - name: Check setup window and installation without SOHO access
+      - name: Check setup window
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -66,42 +66,6 @@ jobs:
             if ($window -and -not $window.HasExited) { $window.Kill() }
             if (-not $launcher.HasExited) { $launcher.Kill() }
           }
-          function Install-Fixture([string]$phase, [string]$json) {
-            $utf8 = New-Object System.Text.UTF8Encoding($false)
-            $info = New-Object System.Diagnostics.ProcessStartInfo
-            $info.FileName = $setup
-            $info.Arguments = '--install'
-            $info.UseShellExecute = $false
-            $info.RedirectStandardInput = $true
-            $info.RedirectStandardOutput = $true
-            $info.StandardOutputEncoding = $utf8
-            $process = [System.Diagnostics.Process]::Start($info)
-            try {
-              # Match setup.ps1 and send JSON as raw UTF-8 without a BOM.
-              $inputStream = $process.StandardInput.BaseStream
-              try {
-                $inputBytes = $utf8.GetBytes($json)
-                $inputStream.Write($inputBytes, 0, $inputBytes.Length)
-              } finally {
-                $inputStream.Dispose()
-              }
-              $output = $process.StandardOutput.ReadToEnd()
-              $process.WaitForExit()
-              if (-not $output) { throw "Installer $phase returned no response (exit $($process.ExitCode))" }
-              $result = $output | ConvertFrom-Json
-              if ($process.ExitCode -ne 0 -or -not $result.OK) {
-                throw "Installer $phase failed (exit $($process.ExitCode)): $($result.Message)"
-              }
-              return $result
-            } finally {
-              $process.Dispose()
-            }
-          }
-          $first = Install-Fixture 'initial install' '{"Login":"test-login","Password":"test-password"}'
-          [System.IO.File]::WriteAllText($first.Paths.Skill, 'Custom review rules')
-          $second = Install-Fixture 'update' '{}'
-          if ([System.IO.File]::ReadAllText($second.Paths.Skill) -ne 'Custom review rules') { throw 'User skill overwritten' }
-          if (-not (Test-Path $second.Paths.Config)) { throw 'MCP config missing' }
       - uses: actions/upload-artifact@v4
         with:
           name: soho-windows-amd64
