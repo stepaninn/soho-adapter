@@ -9,11 +9,16 @@ import (
 	"unsafe"
 
 	"github.com/stepaninn/soho-adapter/internal/privatefs"
+	"golang.org/x/sys/windows"
 )
 
 func hideWindow(command *exec.Cmd) { command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true} }
 
 func launchGUI() error {
+	systemDirectory, err := windows.GetSystemDirectory()
+	if err != nil {
+		return fmt.Errorf("Не удалось найти системный каталог Windows: %w", err)
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("Не удалось найти программу настройки")
@@ -31,10 +36,12 @@ func launchGUI() error {
 	if err := os.WriteFile(script, append([]byte{0xef, 0xbb, 0xbf}, setupScript...), 0600); err != nil {
 		return fmt.Errorf("Не удалось подготовить окно настройки")
 	}
-	command := exec.Command("powershell.exe", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", script, "-SetupExe", self)
-	hideWindow(command)
+	powershell := filepath.Join(systemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")
+	command := exec.Command(powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-File", script, "-SetupExe", self)
+	// CREATE_NO_WINDOW suppresses the console without setting SW_HIDE on the form.
+	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
 	if err := command.Run(); err != nil {
-		return fmt.Errorf("Не удалось открыть окно настройки через Windows PowerShell")
+		return fmt.Errorf("Не удалось открыть окно настройки через Windows PowerShell: %w", err)
 	}
 	return nil
 }

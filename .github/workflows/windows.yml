@@ -29,7 +29,7 @@ jobs:
           if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
       - name: Build package
         run: go run ./cmd/package-windows
-      - name: Check installer without SOHO access
+      - name: Check setup window and installation without SOHO access
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -39,6 +39,29 @@ jobs:
           $env:LOCALAPPDATA = Join-Path $sandbox 'local'
           $env:CODEX_HOME = Join-Path $sandbox 'codex'
           $setup = Join-Path $sandbox 'SOHO Review/SOHO-Setup.exe'
+          $launcher = Start-Process -FilePath $setup -PassThru
+          $window = $null
+          try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(30)
+            do {
+              if ($launcher.HasExited) { throw "Setup exited before showing a window ($($launcher.ExitCode))" }
+              $child = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($launcher.Id) AND Name = 'powershell.exe'" | Select-Object -First 1
+              if ($child) {
+                $window = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
+                if ($window -and $window.MainWindowHandle -ne 0 -and $window.MainWindowTitle -like 'SOHO *') { break }
+              }
+              Start-Sleep -Milliseconds 250
+            } while ([DateTime]::UtcNow -lt $deadline)
+            if (-not $window -or $window.MainWindowHandle -eq 0 -or $window.MainWindowTitle -notlike 'SOHO *') {
+              throw 'The setup window did not become visible'
+            }
+            if (-not $window.CloseMainWindow() -or -not $launcher.WaitForExit(5000) -or $launcher.ExitCode -ne 0) {
+              throw 'Setup did not exit cleanly after closing the window'
+            }
+          } finally {
+            if ($window -and -not $window.HasExited) { $window.Kill() }
+            if (-not $launcher.HasExited) { $launcher.Kill() }
+          }
           function Install-Fixture([string]$json) {
             $info = New-Object System.Diagnostics.ProcessStartInfo
             $info.FileName = $setup

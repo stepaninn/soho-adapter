@@ -16,7 +16,6 @@ function Invoke-Backend([string]$Action, [string]$InputJson = '{}') {
     $info.RedirectStandardInput = $true
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
-    $info.StandardInputEncoding = $utf8
     $info.StandardOutputEncoding = $utf8
     $info.StandardErrorEncoding = $utf8
     $process = New-Object System.Diagnostics.Process
@@ -25,8 +24,14 @@ function Invoke-Backend([string]$Action, [string]$InputJson = '{}') {
         [void]$process.Start()
         $output = $process.StandardOutput.ReadToEndAsync()
         $errors = $process.StandardError.ReadToEndAsync()
-        $process.StandardInput.Write($InputJson)
-        $process.StandardInput.Close()
+        # Windows PowerShell 5.1 does not support ProcessStartInfo.StandardInputEncoding.
+        $inputStream = $process.StandardInput.BaseStream
+        try {
+            $inputBytes = $utf8.GetBytes($InputJson)
+            $inputStream.Write($inputBytes, 0, $inputBytes.Length)
+        } finally {
+            $inputStream.Dispose()
+        }
         while (-not $process.WaitForExit(100)) {
             [System.Windows.Forms.Application]::DoEvents()
         }
@@ -57,7 +62,7 @@ $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 
 $intro = New-Object System.Windows.Forms.Label
-$intro.Text = "1. Введите логин и пароль SOHO и нажмите «Установить / обновить».`r`n2. Перезапустите ChatGPT Desktop.`r`n3. В новом диалоге выберите навык soho-homework-review."
+$intro.Text = "1. Введите логин и пароль SOHO и нажмите «Установить / обновить».`r`n2. Перезапустите ChatGPT Desktop и выберите режим Codex.`r`n3. В разделе Skills найдите soho-homework-review."
 $intro.SetBounds(20, 15, 580, 80)
 $form.Controls.Add($intro)
 
@@ -133,7 +138,7 @@ $install.Add_Click({ Invoke-Action {
         Add-Shortcut 'Настройка SOHO' (Join-Path $paths.Directory 'SOHO-Setup.exe')
         Add-Shortcut 'Изменить правила проверки' (Join-Path $env:SystemRoot 'System32\notepad.exe') ('"' + $paths.Skill + '"')
         Add-Shortcut 'Материалы SOHO' (Join-Path $env:SystemRoot 'explorer.exe') ('"' + $paths.Materials + '"')
-        $status.Text = "Установлено. Перезапустите ChatGPT Desktop.`r`n«Правила проверки SOHO» — ярлык на рабочем столе.`r`nДругие ярлыки: меню «Пуск» → SOHO Review."
+        $status.Text = "Установлено. Перезапустите ChatGPT Desktop и откройте Codex.`r`n«Правила проверки SOHO» — ярлык на рабочем столе.`r`nДругие ярлыки: меню «Пуск» → SOHO Review."
     } catch {
         $status.Text = 'Установлено, но не удалось создать ярлыки. Кнопки этого окна доступны'
     }

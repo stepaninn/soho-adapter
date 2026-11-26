@@ -141,10 +141,11 @@ func TestMCPMaterialContent(t *testing.T) {
 		if err := os.WriteFile(path, []byte("synthetic bytes"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		content, err := materialContent("material-id", soho.DownloadResult{Path: path, MIMEType: mime, Attachment: soho.Attachment{MaterialReference: soho.MaterialReference{Role: "teacher", MessageID: "source-message", Author: &soho.MessageAuthor{ID: "profile"}}}})
-		if err != nil || len(content) != 2 {
-			t.Fatalf("content: %v %v", content, err)
+		response, _, err := materialResponse("material-id", soho.DownloadResult{Path: path, MIMEType: mime, Attachment: soho.Attachment{MaterialReference: soho.MaterialReference{Role: "teacher", MessageID: "source-message", Author: &soho.MessageAuthor{ID: "profile"}}}})
+		if err != nil || len(response.Content) != 2 {
+			t.Fatalf("response: %v %v", response, err)
 		}
+		content := response.Content
 		if !strings.Contains(content[0].(*mcp.TextContent).Text, "source-message") || !strings.Contains(content[0].(*mcp.TextContent).Text, "teacher") {
 			t.Fatal("binary material source missing from text fallback")
 		}
@@ -157,6 +158,38 @@ func TestMCPMaterialContent(t *testing.T) {
 			if !ok || len(resource.Resource.Blob) == 0 || resource.Resource.URI != "soho-material://material-id" {
 				t.Fatal("PDF bytes missing")
 			}
+		}
+	}
+}
+
+func TestMCPLargeMaterialReturnsLocalPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "attachment.pdf")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const size = 18 << 20
+	if err := file.Truncate(size); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	response, output, err := materialResponse("material-id", soho.DownloadResult{
+		Path: path, Bytes: size, MIMEType: "application/pdf", State: "downloaded",
+		Attachment: soho.Attachment{MaterialReference: soho.MaterialReference{Role: "student", MessageID: "source-message"}},
+	})
+	if err != nil || len(response.Content) != 1 {
+		t.Fatalf("expected metadata without binary content, got %v, %v", response, err)
+	}
+	var decoded materialResult
+	if err := json.Unmarshal([]byte(response.Content[0].(*mcp.TextContent).Text), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range []materialResult{output.(materialResult), decoded} {
+		if result.Delivery != "local_file" || result.Path != path || result.Bytes != size || result.State != "downloaded" || result.Attachment.MessageID != "source-message" || result.ReadingInstructions == "" {
+			t.Fatalf("incomplete local file response: %+v", result)
 		}
 	}
 }

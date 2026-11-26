@@ -160,7 +160,10 @@ func run(args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		var downloaded soho.DownloadResult
+		var downloaded struct {
+			soho.DownloadResult
+			Delivery string
+		}
 		if err := decode(response, &downloaded); err != nil {
 			return err
 		}
@@ -173,10 +176,15 @@ func run(args []string, out io.Writer) error {
 				binaryReceived = binaryReceived || (value.Resource != nil && int64(len(value.Resource.Blob)) == downloaded.Bytes)
 			}
 		}
-		if downloaded.State != "downloaded" || !binaryReceived || downloaded.Bytes <= 0 || downloaded.Attachment.Role != resource.Role {
+		localFile := downloaded.Delivery == "local_file" && filepath.IsAbs(downloaded.Path) && !binaryReceived
+		if downloaded.State != "downloaded" || (!binaryReceived && !localFile) || downloaded.Bytes <= 0 || downloaded.Attachment.Role != resource.Role {
 			return fmt.Errorf("read_material returned inconsistent data")
 		}
-		fmt.Fprintf(out, "read_material: OK (%s; role=%s; %d bytes; binary received)\n", downloaded.MIMEType, downloaded.Attachment.Role, downloaded.Bytes)
+		delivery := "binary received"
+		if localFile {
+			delivery = "saved locally"
+		}
+		fmt.Fprintf(out, "read_material: OK (%s; role=%s; %d bytes; %s)\n", downloaded.MIMEType, downloaded.Attachment.Role, downloaded.Bytes, delivery)
 		read++
 	}
 	if read == 0 {

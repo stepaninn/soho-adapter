@@ -41,7 +41,7 @@ func parseOptions(args []string, out io.Writer) (inspectOptions, error) {
 	flags.IntVar(&options.MessageLimit, "message-limit", 20, "Число запрашиваемых сообщений")
 	flags.StringVar(&options.Out, "out", "", "Приватный каталог материалов")
 	flags.StringVar(&options.Hosts, "allow-file-host", "", "Разрешённые хосты файлов через запятую, включает скачивание")
-	flags.Int64Var(&options.MaxBytes, "max-file-bytes", 20<<20, "Предел размера одного файла")
+	flags.Int64Var(&options.MaxBytes, "max-file-bytes", 20<<20, "Предел размера одного файла (в режиме MCP по умолчанию 100 МиБ)")
 	flags.StringVar(&options.EnvFile, "env-file", ".env", "Путь к локальным настройкам")
 	flags.BoolVar(&options.MetadataOnly, "metadata-only", false, "Сохранить описание материалов без скачивания")
 	flags.BoolVar(&options.Verbose, "verbose", false, "Подробная диагностика")
@@ -75,6 +75,11 @@ func parseOptions(args []string, out io.Writer) (inspectOptions, error) {
 		options.Hosts = ""
 	}
 	if options.MCP {
+		customMaxBytes := false
+		flags.Visit(func(f *flag.Flag) { customMaxBytes = customMaxBytes || f.Name == "max-file-bytes" })
+		if !customMaxBytes {
+			options.MaxBytes = 100 << 20
+		}
 		if options.ChatID != "" || options.ChatNumber != 0 || options.FetchLinks {
 			return options, fmt.Errorf("MCP selects homework through tools")
 		}

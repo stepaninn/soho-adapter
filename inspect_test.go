@@ -23,8 +23,20 @@ func TestParseOptions(t *testing.T) {
 		}
 	}
 	options, err := parseOptions([]string{"--chat-number=1", "--out=" + filepath.Join(t.TempDir(), "private")}, io.Discard)
-	if err != nil || options.ChatNumber != 1 || options.MessageLimit != 20 {
+	if err != nil || options.ChatNumber != 1 || options.MessageLimit != 20 || options.MaxBytes != 20<<20 {
 		t.Fatalf("options: %+v, error: %v", options, err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want int64
+	}{
+		{[]string{"--mcp"}, 100 << 20},
+		{[]string{"--mcp", "--max-file-bytes=20971520"}, 20 << 20},
+	} {
+		options, err := parseOptions(tc.args, io.Discard)
+		if err != nil || options.MaxBytes != tc.want {
+			t.Fatalf("%v: max bytes = %d, want %d (error: %v)", tc.args, options.MaxBytes, tc.want, err)
+		}
 	}
 }
 

@@ -5,7 +5,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stepaninn/soho-adapter/internal/soho"
@@ -15,6 +17,9 @@ import (
 var workflowGuide string
 
 const workflowURI = "soho://guide/workflow"
+
+// Bound the binary payload before JSON encoding adds Base64 overhead.
+const maxInlineMaterialBytes = 4 << 20
 
 type listInput struct {
 	After *string `json:"after,omitempty" jsonschema:"PageInfo.endCursor предыдущей страницы"`
@@ -72,33 +77,52 @@ func New(service *soho.ReviewService) *mcp.Server {
 		if err != nil {
 			return nil, result, err
 		}
-		content, err := materialContent(input.ID, result)
-		if err != nil {
-			return nil, nil, err
-		}
-		return &mcp.CallToolResult{Content: content}, result, nil
+		return materialResponse(input.ID, result)
 	})
 	return server
 }
 
 func boolPointer(value bool) *bool { return &value }
 
-func materialContent(id string, result soho.DownloadResult) ([]mcp.Content, error) {
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		return nil, fmt.Errorf("cannot encode material")
-	}
-	content := []mcp.Content{&mcp.TextContent{Text: string(encoded)}}
+type materialResult struct {
+	soho.DownloadResult
+	Delivery            string `json:",omitempty"`
+	ReadingInstructions string `json:",omitempty"`
+}
+
+func materialResponse(id string, result soho.DownloadResult) (*mcp.CallToolResult, any, error) {
+	output := materialResult{DownloadResult: result}
+	content := make([]mcp.Content, 1, 2)
 	if result.MIMEType == "image/png" || result.MIMEType == "image/jpeg" || result.MIMEType == "application/pdf" {
-		body, err := os.ReadFile(result.Path)
+		file, err := os.Open(result.Path)
 		if err != nil {
-			return nil, fmt.Errorf("cannot read downloaded material")
+			return nil, nil, fmt.Errorf("cannot open downloaded material")
 		}
-		if result.MIMEType == "application/pdf" {
+		defer file.Close()
+		var body []byte
+		if result.Bytes <= maxInlineMaterialBytes {
+			body, err = io.ReadAll(io.LimitReader(file, maxInlineMaterialBytes+1))
+			if err != nil {
+				return nil, nil, fmt.Errorf("cannot read downloaded material")
+			}
+		}
+		if result.Bytes > maxInlineMaterialBytes || len(body) > maxInlineMaterialBytes {
+			output.Path, err = filepath.Abs(result.Path)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cannot resolve downloaded material path")
+			}
+			output.Delivery = "local_file"
+			output.ReadingInstructions = "Открой сохранённый файл по Path инструментом чтения локальных файлов. Если содержимое недоступно, попроси преподавателя приложить файл в диалоге. Не считай скачивание чтением."
+		} else if result.MIMEType == "application/pdf" {
 			content = append(content, &mcp.EmbeddedResource{Resource: &mcp.ResourceContents{URI: "soho-material://" + id, MIMEType: result.MIMEType, Blob: body}})
 		} else {
 			content = append(content, &mcp.ImageContent{MIMEType: result.MIMEType, Data: body})
 		}
 	}
-	return content, nil
+	encoded, err := json.Marshal(output)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot encode material")
+	}
+	content[0] = &mcp.TextContent{Text: string(encoded)}
+	return &mcp.CallToolResult{Content: content}, output, nil
 }
