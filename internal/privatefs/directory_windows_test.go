@@ -3,8 +3,8 @@ package privatefs
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -26,10 +26,12 @@ func TestDirectoryWindowsACL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sddl := sd.String()
-	if strings.Count(sddl, "(A;") != 2 || !strings.Contains(sddl, user.User.Sid.String()) || !strings.Contains(sddl, ";;;SY)") {
-		t.Fatalf("unexpected ACL: %s", sddl)
+	system, err := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
+	if err != nil {
+		t.Fatal(err)
 	}
+	assertPrivateACL(t, sd, user.User.Sid, system, windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE)
+
 	file := filepath.Join(path, "material.pdf")
 	if err := os.WriteFile(file, []byte("synthetic material"), 0600); err != nil {
 		t.Fatal(err)
@@ -38,7 +40,32 @@ func TestDirectoryWindowsACL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sddl := child.String(); strings.Count(sddl, "(A;") != 2 || !strings.Contains(sddl, user.User.Sid.String()) || !strings.Contains(sddl, ";;;SY)") {
-		t.Fatalf("material did not inherit private ACL: %s", sddl)
+	assertPrivateACL(t, child, user.User.Sid, system, windows.INHERITED_ACE)
+}
+
+func assertPrivateACL(t *testing.T, sd *windows.SECURITY_DESCRIPTOR, user, system *windows.SID, flags uint8) {
+	t.Helper()
+	dacl, _, err := sd.DACL()
+	if err != nil || dacl == nil || dacl.AceCount != 2 {
+		t.Fatalf("expected two DACL entries: %s (%v)", sd, err)
+	}
+
+	// SDDL may display well-known aliases such as LA in place of the numeric SID.
+	want := map[string]int{user.String(): 1}
+	want[system.String()]++
+	const fileAllAccess = windows.STANDARD_RIGHTS_REQUIRED | windows.SYNCHRONIZE | 0x1ff
+	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &ace); err != nil {
+			t.Fatal(err)
+		}
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Header.AceFlags != flags || ace.Mask != fileAllAccess {
+			t.Fatalf("unexpected DACL entry %d: %s", i, sd)
+		}
+		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)).String()
+		if want[sid] == 0 {
+			t.Fatalf("unexpected trustee in DACL entry %d: %s", i, sd)
+		}
+		want[sid]--
 	}
 }
